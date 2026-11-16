@@ -5,8 +5,9 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
 import 'export_model.dart';
+import '../theme.dart';
 
-/// Compact reference layout; A4/48pt and monochrome override the document preset.
+/// A4/48pt reference layout with monochrome prose and light-palette code.
 class DocxExporter {
   Uint8List export(ExportModel model) {
     String text(String value) =>
@@ -70,9 +71,15 @@ class DocxExporter {
             out.write(paragraph('<w:r><w:t>${text(block.language)}</w:t></w:r>',
                 style: 'CodeLabel'));
           }
-          for (final line in block.text.split('\n')) {
+          for (final line in block.codeLines) {
+            final content = line
+                .map((token) =>
+                    '<w:r><w:rPr><w:color w:val="${syntaxColorHex(CodeSyntaxColors.light.forScope(token.scope))}"/>${token.italic ? '<w:i/>' : ''}</w:rPr><w:t xml:space="preserve">${text(token.text)}</w:t></w:r>')
+                .join();
             out.write(paragraph(
-                '<w:r><w:t xml:space="preserve">${text(line.isEmpty ? ' ' : line)}</w:t></w:r>',
+                line.isEmpty
+                    ? '<w:r><w:t xml:space="preserve"> </w:t></w:r>'
+                    : content,
                 style: 'Code'));
           }
         } else if (block.type == 'image') {
@@ -143,7 +150,7 @@ class DocxExporter {
             int after = 120,
             bool italic = false,
             bool code = false}) =>
-        '<w:style w:type="paragraph" w:styleId="$id"${id == 'Normal' ? ' w:default="1"' : ''}><w:name w:val="$name"/>${id == 'Normal' ? '' : '<w:basedOn w:val="Normal"/>'}<w:pPr><w:spacing w:before="$before" w:after="$after" w:line="276" w:lineRule="auto"/>${id.startsWith('Heading') ? '<w:keepNext/><w:outlineLvl w:val="${int.parse(id.substring(7)) - 1}"/>' : ''}${code ? '<w:shd w:fill="F1F1F1"/><w:ind w:left="120" w:right="120"/>' : ''}${id == 'Quote' ? '<w:ind w:left="300"/><w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="999999"/></w:pBdr>' : ''}</w:pPr><w:rPr><w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="Noto Sans Devanagari"/><w:sz w:val="$size"/><w:color w:val="111111"/>${italic ? '<w:i/>' : ''}</w:rPr></w:style>';
+        '<w:style w:type="paragraph" w:styleId="$id"${id == 'Normal' ? ' w:default="1"' : ''}><w:name w:val="$name"/>${id == 'Normal' ? '' : '<w:basedOn w:val="Normal"/>'}<w:pPr><w:spacing w:before="$before" w:after="$after" w:line="276" w:lineRule="auto"/>${id.startsWith('Heading') ? '<w:keepNext/><w:outlineLvl w:val="${int.parse(id.substring(7)) - 1}"/>' : ''}${code ? '<w:wordWrap/><w:shd w:fill="F1F1F1"/><w:ind w:left="120" w:right="120"/>' : ''}${id == 'Quote' ? '<w:ind w:left="300"/><w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="999999"/></w:pBdr>' : ''}</w:pPr><w:rPr><w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="Noto Sans Devanagari"/><w:sz w:val="$size"/><w:color w:val="111111"/>${italic ? '<w:i/>' : ''}</w:rPr></w:style>';
     return '${style('Normal', 'Normal', 'Arial', 22)}${style('Heading1', 'heading 1', 'Georgia', 42, before: 280, after: 160)}${style('Heading2', 'heading 2', 'Georgia', 32, before: 220, after: 120)}${style('Heading3', 'heading 3', 'Georgia', 26, before: 160, after: 100)}${style('Quote', 'Quote', 'Arial', 22, italic: true)}${style('Code', 'Code', 'Courier New', 18, after: 0, code: true)}${style('CodeLabel', 'Code Label', 'Courier New', 16, before: 140, after: 40)}<w:style w:type="character" w:styleId="InlineCode"><w:name w:val="Inline Code"/><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:shd w:fill="EEEEEE"/><w:sz w:val="20"/></w:rPr></w:style><w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="111111"/><w:u w:val="single"/></w:rPr></w:style>';
   }
 }

@@ -1,5 +1,7 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 
+import '../code_syntax.dart';
+
 class ExportRun {
   const ExportRun(this.text, this.attributes);
   final String text;
@@ -27,6 +29,8 @@ class ExportBlock {
   final String language;
   final String image;
   String get text => runs.map((run) => run.text).join();
+  List<List<CodeToken>> get codeLines =>
+      CodeHighlighter.shared.highlight(text, language).lines;
 }
 
 class ExportModel {

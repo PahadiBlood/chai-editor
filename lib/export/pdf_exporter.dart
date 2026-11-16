@@ -7,8 +7,23 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'export_model.dart';
+import '../code_syntax.dart';
+import '../theme.dart';
 
 class PdfExporter {
+  /// Shared token scopes converted to PDF spans using the printing palette.
+  static List<pw.TextSpan> codeSpans(List<CodeToken> tokens) => [
+        for (final token in tokens)
+          pw.TextSpan(
+              text: token.text,
+              style: pw.TextStyle(
+                  color: PdfColor.fromInt(
+                      CodeSyntaxColors.light.forScope(token.scope).toARGB32()),
+                  fontStyle: token.italic
+                      ? pw.FontStyle.italic
+                      : pw.FontStyle.normal)),
+      ];
+
   static const _fallbackNames = [
     'NotoSansSymbols2',
     'NotoSansDevanagari',
@@ -126,15 +141,24 @@ class PdfExporter {
             widgets.add(pw.Text(block.language,
                 style: pw.TextStyle(
                     font: mono, fontSize: 8, color: PdfColors.grey600)));
-            for (final line in block.text.split('\n')) {
+            for (final line in block.codeLines.expand(wrapCodeLine)) {
               widgets.add(pw.Container(
                   width: double.infinity,
                   padding:
                       const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   color: PdfColors.grey100,
-                  child: pw.Text(line.isEmpty ? ' ' : line,
-                      style: pw.TextStyle(
-                          font: mono, fontFallback: fallback, fontSize: 9))));
+                  child: pw.RichText(
+                      softWrap: true,
+                      text: pw.TextSpan(
+                          style: pw.TextStyle(
+                              font: mono,
+                              fontFallback: fallback,
+                              fontSize: 9,
+                              color: PdfColor.fromInt(
+                                  CodeSyntaxColors.light.plain.toARGB32())),
+                          children: line.isEmpty
+                              ? [const pw.TextSpan(text: ' ')]
+                              : codeSpans(line)))));
             }
             widgets.add(pw.SizedBox(height: 8));
             continue;
