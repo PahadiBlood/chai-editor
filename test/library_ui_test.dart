@@ -21,13 +21,14 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(ChaiEditorApp(libraryService: service));
     // Filesystem work must run outside fake async.
-    for (var i = 0; i < 30; i++) {
+    for (var i = 0; i < 200; i++) {
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       });
       await tester.pump();
       if (find.text('Welcome').evaluate().isNotEmpty) break;
     }
+    expect(find.byType(AppFlowyEditor), findsOneWidget, reason: 'Library setup must finish before settling the loading indicator');
     await tester.pumpAndSettle();
     expect(find.text('On My Mac'), findsOneWidget);
     expect(find.text('Welcome'), findsOneWidget);

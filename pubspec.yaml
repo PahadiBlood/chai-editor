@@ -1,7 +1,7 @@
 name: chai_editor
 description: A document editor for macOS. Opens, edits and saves Markdown files.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ">=3.6.0 <4.0.0"

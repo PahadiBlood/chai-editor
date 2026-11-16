@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'library/library_model.dart';
 import 'library/library_service.dart';
+import 'library/library_location.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/document_switcher.dart';
 import 'export/export_model.dart';
@@ -30,9 +31,14 @@ import 'toolbar.dart';
 const _markdownExtensions = ['md', 'markdown', 'txt'];
 
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key, this.enableLibrary = true, this.libraryService});
+  const EditorPage(
+      {super.key,
+      this.enableLibrary = true,
+      this.libraryService,
+      this.libraryLocation});
   final bool enableLibrary;
   final LibraryService? libraryService;
+  final LibraryLocation? libraryLocation;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -52,24 +58,82 @@ class _EditorPageState extends State<EditorPage>
   AppLifecycleListener? _lifecycle;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  Future<void> _initializeLibrary() async {
+  bool _storageLoading = false;
+  String? _storageError;
+  late final LibraryLocation _location = widget.libraryLocation ??
+      LibraryLocation(
+        documentsDirectory: getApplicationDocumentsDirectory,
+        supportDirectory: getApplicationSupportDirectory,
+      );
+
+  Future<void> _initializeLibrary({bool useAppStorage = false}) async {
+    if (_storageLoading) return;
+    _storageLoading = true;
+    _storageError = null;
+    LibraryModel? candidate;
     try {
-      final directory = widget.libraryService == null
-          ? await getApplicationDocumentsDirectory()
-          : null;
+      final service = useAppStorage
+          ? await _location.appStorage()
+          : widget.libraryService ?? await _location.resolve();
       if (!mounted) return;
-      final model = LibraryModel(widget.libraryService ??
-          LibraryService(Directory(p.join(directory!.path, 'ChaiEditor'))));
-      _library = model;
-      model.addListener(_libraryChanged);
-      model.focusEditor.addListener(_focusDocument);
-      await model.initialize();
+      candidate = LibraryModel(service);
+      await candidate.initialize();
+      await service.verifyWritable();
       if (!mounted) return;
+      if (useAppStorage) await _location.rememberAppStorage();
+      _library = candidate;
+      candidate = null;
+      _library!.addListener(_libraryChanged);
+      _library!.focusEditor.addListener(_focusDocument);
       _libraryChanged();
-    } catch (error) {
-      if (mounted) _toast('Could not open note library: $error');
+    } catch (error, stack) {
+      debugPrint('Library setup failed: $error\n$stack');
+      if (mounted) {
+        _storageError = 'Chai Editor couldn’t open its notes folder. '
+            'Retry, or create a library in this app’s local storage. '
+            'Existing notes won’t be moved or deleted.';
+      }
+    } finally {
+      candidate?.dispose();
+      _storageLoading = false;
+      if (mounted) setState(() {});
     }
   }
+
+  void _retryStorage({bool useAppStorage = false}) {
+    _initialization = _initializeLibrary(useAppStorage: useAppStorage);
+    setState(() {});
+  }
+
+  Widget _storageSetup() => Scaffold(
+          body: Center(
+              child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Set up your note library',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              Text(_storageError ?? 'Preparing your notes…',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              if (_storageLoading)
+                const CircularProgressIndicator()
+              else
+                Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(
+                          onPressed: _retryStorage, child: const Text('Retry')),
+                      FilledButton(
+                          onPressed: () => _retryStorage(useAppStorage: true),
+                          child: const Text('Use app storage')),
+                    ]),
+            ])),
+      )));
 
   void _focusDocument() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -115,7 +179,9 @@ class _EditorPageState extends State<EditorPage>
   void _saveInBackground() {
     unawaited(_flushLibrary().catchError((Object error) {
       if (mounted) {
-        _library?.error = 'Could not save notes: $error';
+        debugPrint('Background note save: $error');
+        _library?.error =
+            'Your recent changes couldn’t be saved. Keep this window open and try saving again.';
         _libraryChanged();
       }
     }));
@@ -144,7 +210,16 @@ class _EditorPageState extends State<EditorPage>
       if (choice == _Unsaved.cancel) return;
       if (choice == _Unsaved.save && !await _save()) return;
     }
-    await library.open(path);
+    try {
+      await library.open(path);
+    } catch (error) {
+      debugPrint('Open library note: $error');
+      if (mounted) {
+        _toast(
+            'Couldn’t open this note. It may have moved. Refresh the library and try again.');
+      }
+      return;
+    }
     if (mounted) {
       setState(() => _external = false);
       _scaffoldKey.currentState?.closeDrawer();
@@ -197,7 +272,9 @@ class _EditorPageState extends State<EditorPage>
     ...standardCharacterShortcutEvents.where((e) => e != slashCommand),
     customSlashCommand(
       [...standardSelectionMenuItems, codeBlockMenuItem],
-      style: kMonochromeEditorMenus ? monochromeSelectionMenu : SelectionMenuStyle.dark,
+      style: kMonochromeEditorMenus
+          ? monochromeSelectionMenu
+          : SelectionMenuStyle.dark,
     ),
   ];
 
@@ -224,7 +301,9 @@ class _EditorPageState extends State<EditorPage>
             await _flushLibrary();
             return AppExitResponse.exit;
           } catch (error) {
-            _toast('Could not save notes: $error');
+            debugPrint('Exit save: $error');
+            _toast(
+                'Your recent changes couldn’t be saved. Please try saving again before closing.');
             return AppExitResponse.cancel;
           }
         },
@@ -341,7 +420,9 @@ class _EditorPageState extends State<EditorPage>
       _external = true;
       _addTab(markdown: text, filePath: path);
     } catch (e) {
-      _toast('Could not open the file: $e');
+      debugPrint('Open file: $e');
+      _toast(
+          'Couldn’t open this file. It may have moved or no longer be accessible.');
     }
   }
 
@@ -382,7 +463,9 @@ class _EditorPageState extends State<EditorPage>
       _toast('Saved ${tab.title}');
       return true;
     } catch (e) {
-      _toast('Could not save the file: $e');
+      debugPrint('Save file: $e');
+      _toast(
+          'Couldn’t save this file. Try Save As and choose a writable folder.');
       return false;
     }
   }
@@ -445,7 +528,8 @@ class _EditorPageState extends State<EditorPage>
       if (path == null) return;
       await insertImage(_tab.editorState, path);
     } catch (e) {
-      _toast('Could not insert the image: $e');
+      debugPrint('Insert image: $e');
+      _toast('Couldn’t open this image. Try selecting it again.');
     }
   }
 
@@ -467,6 +551,7 @@ class _EditorPageState extends State<EditorPage>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.enableLibrary && _library == null) return _storageSetup();
     return CallbackShortcuts(
       bindings: {
         SingleActivator(LogicalKeyboardKey.keyS,
@@ -661,7 +746,9 @@ class _EditorPageState extends State<EditorPage>
     final key = ValueKey('${identityHashCode(tab)}-$_editing');
 
     return FloatingToolbar(
-      style: kMonochromeEditorMenus ? monochromeFloatingToolbar : const FloatingToolbarStyle(),
+      style: kMonochromeEditorMenus
+          ? monochromeFloatingToolbar
+          : const FloatingToolbarStyle(),
       key: key,
       items: [
         paragraphItem,

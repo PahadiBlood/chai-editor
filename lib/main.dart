@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'editor_page.dart';
 import 'library/library_service.dart';
+import 'library/library_location.dart';
 import 'theme.dart';
 
 void main() {
@@ -12,9 +13,13 @@ void main() {
 
 class ChaiEditorApp extends StatelessWidget {
   const ChaiEditorApp(
-      {super.key, this.enableLibrary = true, this.libraryService});
+      {super.key,
+      this.enableLibrary = true,
+      this.libraryService,
+      this.libraryLocation});
   final bool enableLibrary;
   final LibraryService? libraryService;
+  final LibraryLocation? libraryLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +38,9 @@ class ChaiEditorApp extends StatelessWidget {
       ],
       supportedLocales: AppFlowyEditorLocalizations.delegate.supportedLocales,
       home: EditorPage(
-          enableLibrary: enableLibrary, libraryService: libraryService),
+          enableLibrary: enableLibrary,
+          libraryService: libraryService,
+          libraryLocation: libraryLocation),
     );
   }
 }
