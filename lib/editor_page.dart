@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'library/library_model.dart';
 import 'library/library_service.dart';
@@ -26,9 +25,13 @@ import 'code_block.dart';
 import 'doc_tab.dart';
 import 'paste.dart';
 import 'clipboard_writer.dart';
+import 'file_manager.dart';
+import 'library/atomic_file.dart';
 import 'theme.dart';
 import 'toolbar.dart';
 
+const kLegacyLoadDirtyReset =
+    bool.fromEnvironment('CHAI_LEGACY_LOAD_DIRTY_RESET', defaultValue: false);
 const _markdownExtensions = ['md', 'markdown', 'txt'];
 
 class EditorPage extends StatefulWidget {
@@ -82,6 +85,16 @@ class _EditorPageState extends State<EditorPage>
       await service.verifyWritable();
       if (!mounted) return;
       if (useAppStorage) await _location.rememberAppStorage();
+      // The temporary first tab is only a fallback for a library-less editor.
+      // Once the saved library has opened a note, it must not appear as a
+      // spurious unsaved external document in the sidebar or document menu.
+      if (candidate.current != null &&
+          _tabs.length == 1 &&
+          _tabs.single.filePath == null &&
+          !_tabs.single.dirty) {
+        final draft = _tabs.removeAt(0);
+        WidgetsBinding.instance.addPostFrameCallback((_) => draft.dispose());
+      }
       _library = candidate;
       candidate = null;
       _library!.addListener(_libraryChanged);
@@ -154,7 +167,8 @@ class _EditorPageState extends State<EditorPage>
       _library?.openNote,
       _library?.hidden,
       _library?.width,
-      _library?.error
+      _library?.error,
+      _library?.current?.revision,
     );
     if (_lastLibrarySignature != signature) {
       _lastLibrarySignature = signature;
@@ -206,11 +220,6 @@ class _EditorPageState extends State<EditorPage>
   Future<void> _openLibrary(String path) async {
     final library = _library;
     if (library == null) return;
-    if (_external && _tab.dirty) {
-      final choice = await _askAboutUnsaved(_tab);
-      if (choice == _Unsaved.cancel) return;
-      if (choice == _Unsaved.save && !await _save()) return;
-    }
     try {
       await library.open(path);
     } catch (error) {
@@ -224,6 +233,7 @@ class _EditorPageState extends State<EditorPage>
     if (mounted) {
       setState(() => _external = false);
       _scaffoldKey.currentState?.closeDrawer();
+      _focusTab(_tab);
     }
   }
 
@@ -288,6 +298,44 @@ class _EditorPageState extends State<EditorPage>
       ? _library!.current!
       : _tabs[_current];
 
+  List<DocTab> get _documentTabs => [
+        ...?_library?.openTabs,
+        ..._tabs,
+      ];
+
+  void _focusTab(DocTab tab) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && identical(_tab, tab)) {
+        tab.editorState.selection ??=
+            tab.rememberedSelection ?? Selection.collapsed(Position(path: [0]));
+        tab.focusNode.requestFocus();
+      }
+    });
+  }
+
+  void _selectTab(DocTab tab) {
+    if (tab.libraryManaged) {
+      unawaited(_openLibrary(tab.filePath!));
+    } else {
+      setState(() {
+        _current = _tabs.indexOf(tab);
+        _external = true;
+      });
+      _focusTab(tab);
+    }
+  }
+
+  void _history({bool redo = false}) {
+    if (!_editing || ModalRoute.of(context)?.isCurrent != true) return;
+    final tab = _tab;
+    if (redo) {
+      tab.editorState.undoManager.redo();
+    } else {
+      tab.editorState.undoManager.undo();
+    }
+    _focusTab(tab);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -304,6 +352,7 @@ class _EditorPageState extends State<EditorPage>
         }),
         onExitRequested: () async {
           try {
+            if (!await _confirmExit()) return AppExitResponse.cancel;
             await _flushLibrary();
             return AppExitResponse.exit;
           } catch (error) {
@@ -341,7 +390,10 @@ class _EditorPageState extends State<EditorPage>
     );
     // Loading a file is not an edit, so clear the dirty flag it may have set.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && tab.dirty && markdown.isNotEmpty) {
+      if (kLegacyLoadDirtyReset &&
+          mounted &&
+          tab.dirty &&
+          markdown.isNotEmpty) {
         setState(() => tab.dirty = false);
       }
     });
@@ -351,30 +403,109 @@ class _EditorPageState extends State<EditorPage>
     });
   }
 
-  Future<void> _closeCurrentTab() async {
-    final tab = _tab;
-    if (tab.dirty) {
+  Future<void> _closeCurrentTab() => _closeDocument(_tab);
+
+  Future<List<DocTab>?> _confirmDocuments(Iterable<DocTab> tabs) async {
+    final discarded = <DocTab>[];
+    for (final tab in tabs) {
+      if (!tab.needsSave) continue;
       final choice = await _askAboutUnsaved(tab);
-      if (choice == _Unsaved.cancel) return;
+      if (!mounted || choice == _Unsaved.cancel) return null;
       if (choice == _Unsaved.save) {
-        final saved = await _save();
-        if (!saved) return;
+        if (!await _saveDocument(tab) || tab.needsSave) return null;
+      } else {
+        discarded.add(tab);
       }
     }
+    return discarded;
+  }
 
+  void _detachExternal(Iterable<DocTab> tabs) {
+    final old = tabs.toList();
+    final active = _tab;
     setState(() {
-      _tabs.remove(tab);
+      _tabs.removeWhere(old.contains);
       if (_tabs.isEmpty) {
-        _current = 0;
-      } else if (_current >= _tabs.length) {
-        _current = _tabs.length - 1;
+        _addTab(markdown: '');
+      }
+      _current = _tabs.contains(active)
+          ? _tabs.indexOf(active)
+          : _current.clamp(0, _tabs.length - 1);
+      if (old.contains(active)) _external = _library?.current == null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final tab in old) {
+        tab.dispose();
       }
     });
-    // Dispose after the frame so the editor widget is gone first.
-    WidgetsBinding.instance.addPostFrameCallback((_) => tab.dispose());
+  }
 
-    if (_tabs.isEmpty) {
-      _addTab(markdown: '');
+  Future<void> _closeDocument(DocTab tab) async {
+    final library = _library;
+    final held = tab.libraryManaged ? [tab] : <DocTab>[];
+    library?.holdAutosaves(held);
+    try {
+      final result = await _confirmDocuments([tab]);
+      if (result == null || !mounted) return;
+      for (final item in result) {
+        item.discardPendingChanges();
+      }
+      if (tab.libraryManaged) {
+        await library!.closeDocuments([tab]);
+      } else {
+        _detachExternal([tab]);
+      }
+      if (mounted) {
+        setState(() {});
+        _focusTab(_tab);
+      }
+    } finally {
+      library?.resumeAutosaves(held);
+    }
+  }
+
+  Future<void> _removeLibraryEntry(String path) async {
+    final library = _library!;
+    final held = library.documentsUnder(path);
+    final external = _tabs
+        .where((tab) =>
+            tab.filePath != null &&
+            (tab.filePath == path || p.isWithin(path, tab.filePath!)))
+        .toList();
+    library.holdAutosaves(held);
+    try {
+      final result = await _confirmDocuments([...held, ...external]);
+      if (result == null || !mounted) return;
+      for (final item in result) {
+        item.discardPendingChanges();
+      }
+      if (external.isNotEmpty) _detachExternal(external);
+      await library.removeFromEditor(path);
+      if (mounted) {
+        setState(() {});
+        _focusTab(_tab);
+      }
+    } catch (error) {
+      debugPrint('Remove from editor: $error');
+      _toast('Couldn’t remove this item. Its files have been kept.');
+    } finally {
+      library.resumeAutosaves(held);
+    }
+  }
+
+  Future<bool> _confirmExit() async {
+    final held = _library?.openTabs ?? <DocTab>[];
+    _library?.holdAutosaves(held);
+    try {
+      final result = await _confirmDocuments(_documentTabs
+          .where((tab) => !tab.libraryManaged || tab.savePath != null));
+      if (result == null) return false;
+      for (final item in result) {
+        item.discardPendingChanges();
+      }
+      return true;
+    } finally {
+      _library?.resumeAutosaves(held);
     }
   }
 
@@ -391,7 +522,7 @@ class _EditorPageState extends State<EditorPage>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, _Unsaved.discard),
-            child: const Text("Don't save"),
+            child: const Text('Discard'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, _Unsaved.save),
@@ -417,14 +548,24 @@ class _EditorPageState extends State<EditorPage>
 
       final existing = _tabs.indexWhere((t) => t.filePath == path);
       if (existing >= 0) {
-        setState(() => _current = existing);
+        setState(() {
+          _current = existing;
+          _external = true;
+        });
+        _focusTab(_tabs[existing]);
         return;
       }
 
-      await _library?.flush();
+      if (_library != null &&
+          p.isWithin(_library!.service.root, path) &&
+          p.extension(path).toLowerCase() == '.md') {
+        await _openLibrary(path);
+        return;
+      }
       final text = await File(path).readAsString();
       _external = true;
       _addTab(markdown: text, filePath: path);
+      _focusTab(_tab);
     } catch (e) {
       debugPrint('Open file: $e');
       _toast(
@@ -432,44 +573,34 @@ class _EditorPageState extends State<EditorPage>
     }
   }
 
-  Future<bool> _save({bool saveAs = false}) async {
-    final tab = _tab;
-    try {
-      if (tab.libraryManaged && !saveAs) {
-        await _library?.flush();
-        return true;
-      }
-      var path = tab.filePath;
+  Future<bool> _save({bool saveAs = false}) =>
+      _saveDocument(_tab, saveAs: saveAs);
 
+  Future<bool> _saveDocument(DocTab tab, {bool saveAs = false}) async {
+    try {
+      var path = tab.savePath;
       if (path == null || saveAs) {
-        final suggested = tab.filePath == null ? 'Untitled.md' : tab.title;
         path = await FilePicker.platform.saveFile(
           dialogTitle: 'Save document',
-          fileName: suggested,
+          fileName: tab.filePath == null ? 'Untitled.md' : tab.title,
           type: FileType.custom,
           allowedExtensions: ['md'],
         );
-        if (path == null) return false;
-
+        if (path == null || !mounted) return false;
         final lower = path.toLowerCase();
         if (!lower.endsWith('.md') && !lower.endsWith('.markdown')) {
           path = '$path.md';
         }
       }
-
-      await File(path).writeAsString(tab.toMarkdown());
-      if (tab.libraryManaged) {
-        _toast('Exported ${p.basename(path)}');
-        return true;
-      }
-      setState(() {
-        tab.filePath = path;
-        tab.dirty = false;
-      });
-      _toast('Saved ${tab.title}');
+      final markdown = tab.toMarkdown();
+      await writeFileAtomic(path, markdown);
+      if (tab.libraryManaged) await _library!.saveNote(tab);
+      if (!mounted) return false;
+      setState(() => tab.rememberSavedDestination(path!, markdown));
+      _toast('Saved ${p.basename(path)}');
       return true;
-    } catch (e) {
-      debugPrint('Save file: $e');
+    } catch (error) {
+      debugPrint('Save file: $error');
       _toast(
           'Couldn’t save this file. Try Save As and choose a writable folder.');
       return false;
@@ -515,9 +646,10 @@ class _EditorPageState extends State<EditorPage>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Exported'),
           action: SnackBarAction(
-              label: 'Show in Finder',
-              onPressed: () =>
-                  launchUrl(Uri.directory(p.dirname(destination))))));
+              label: fileManagerLabel(),
+              onPressed: () => unawaited(revealFileLocation(destination)
+                  .catchError((Object error) =>
+                      _toast('Couldn’t open this file location.'))))));
     } catch (e) {
       _toast('Couldn’t export this note. Check the destination and try again.');
       debugPrint('Export: $e');
@@ -560,6 +692,15 @@ class _EditorPageState extends State<EditorPage>
     if (widget.enableLibrary && _library == null) return _storageSetup();
     return CallbackShortcuts(
       bindings: {
+        SingleActivator(LogicalKeyboardKey.keyZ,
+            meta: Platform.isMacOS, control: !Platform.isMacOS): _history,
+        SingleActivator(LogicalKeyboardKey.keyZ,
+            shift: true,
+            meta: Platform.isMacOS,
+            control: !Platform.isMacOS): () => _history(redo: true),
+        if (!Platform.isMacOS)
+          const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
+              _history(redo: true),
         SingleActivator(LogicalKeyboardKey.keyS,
             meta: Platform.isMacOS, control: !Platform.isMacOS): _save,
         SingleActivator(LogicalKeyboardKey.keyS,
@@ -634,10 +775,12 @@ class _EditorPageState extends State<EditorPage>
                                               color: AppColors.textMuted)),
                                     ]),
                               ),
-                        tabs: _tabs,
-                        currentIndex: _current,
+                        tabs: _documentTabs,
+                        currentIndex: _documentTabs.indexOf(_tab),
                         editing: _editing,
-                        onSelectTab: (i) => setState(() => _current = i),
+                        onSelectTab: (i) => _selectTab(_documentTabs[i]),
+                        onUndo: () => _history(),
+                        onRedo: () => _history(redo: true),
                         onNew: _newNote,
                         onToggleSidebar: widget.enableLibrary &&
                                 (!wide || _library?.hidden != false)
@@ -737,6 +880,10 @@ class _EditorPageState extends State<EditorPage>
       value: _library!,
       child: LibrarySidebar(
         onOpen: _openLibrary,
+        onRemove: _removeLibraryEntry,
+        externalTabs: _tabs,
+        onOpenExternal: _selectTab,
+        onCloseExternal: _closeDocument,
         onExport: (path, format) => _export(format, path: path),
         onHide: () {
           if (_scaffoldKey.currentState?.isDrawerOpen == true) {

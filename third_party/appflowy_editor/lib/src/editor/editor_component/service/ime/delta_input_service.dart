@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 
 class DeltaTextInputService extends TextInputService with DeltaTextInputClient {
   DeltaTextInputService({
+    super.onUndo,
+    super.onRedo,
     required super.onInsert,
     required super.onDelete,
     required super.onReplace,
@@ -139,6 +141,14 @@ class DeltaTextInputService extends TextInputService with DeltaTextInputClient {
 
   @override
   void performSelector(String selectorName) {
+    if (selectorName == 'undo:') {
+      onUndo?.call();
+      return;
+    }
+    if (selectorName == 'redo:') {
+      onRedo?.call();
+      return;
+    }
     final currentTextEditingValue = this.currentTextEditingValue;
     if (currentTextEditingValue == null) {
       return;

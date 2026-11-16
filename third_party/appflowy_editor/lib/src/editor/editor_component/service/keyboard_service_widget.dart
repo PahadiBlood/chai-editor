@@ -360,6 +360,12 @@ class KeyboardServiceWidgetState extends State<KeyboardServiceWidget>
 
   NonDeltaTextInputService buildTextInputService() {
     return NonDeltaTextInputService(
+      onUndo: () {
+        if (editorState.editable) editorState.undoManager.undo();
+      },
+      onRedo: () {
+        if (editorState.editable) editorState.undoManager.redo();
+      },
       onInsert: (insertion) async {
         for (final interceptor in interceptors) {
           final result = await interceptor.interceptInsert(

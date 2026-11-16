@@ -262,6 +262,12 @@ class LibraryService {
       final expanded = state['expanded'];
       final width = state['width'];
       return {
+        'removed': state['removed'] is List
+            ? (state['removed'] as List)
+                .map(_decodePath)
+                .whereType<String>()
+                .toList()
+            : <String>[],
         'open': _decodePath(state['open']),
         'selected': _decodePath(state['selected']),
         'expanded': expanded is List
@@ -283,7 +289,11 @@ class LibraryService {
   Future<void> writeState(Map<String, dynamic> state) => _writeInternal(
       statePath,
       jsonEncode({
-        'version': 2,
+        'version': 3,
+        'removed': (state['removed'] is List ? state['removed'] as List : [])
+            .map(_encodePath)
+            .whereType<String>()
+            .toList(),
         'open': _encodePath(state['open']),
         'selected': _encodePath(state['selected']),
         'expanded': (state['expanded'] is List ? state['expanded'] as List : [])

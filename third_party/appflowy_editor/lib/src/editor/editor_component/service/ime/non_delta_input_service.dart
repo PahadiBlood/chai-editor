@@ -11,6 +11,8 @@ const String _deleteBackwardSelectorName = 'deleteBackward:';
 
 class NonDeltaTextInputService extends TextInputService with TextInputClient {
   NonDeltaTextInputService({
+    super.onUndo,
+    super.onRedo,
     required super.onInsert,
     required super.onDelete,
     required super.onReplace,
@@ -205,6 +207,14 @@ class NonDeltaTextInputService extends TextInputService with TextInputClient {
 
   @override
   void performSelector(String selectorName) {
+    if (selectorName == 'undo:') {
+      onUndo?.call();
+      return;
+    }
+    if (selectorName == 'redo:') {
+      onRedo?.call();
+      return;
+    }
     AppFlowyEditorLog.editor.debug('performSelector: $selectorName');
 
     final currentTextEditingValue = this.currentTextEditingValue?.unformat();

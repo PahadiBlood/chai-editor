@@ -16,6 +16,8 @@ class DocTab {
     required VoidCallback onChanged,
   }) : editorState = EditorState(
             document: document ?? markdownToEditorDocument(markdown)) {
+    savePath = libraryManaged ? null : filePath;
+    _savedDestinationMarkdown = savePath == null ? null : toMarkdown();
     scrollController = EditorScrollController(
       editorState: editorState,
       shrinkWrap: false,
@@ -23,6 +25,7 @@ class DocTab {
     editorState.selectionNotifier.addListener(_rememberSelection);
     _subscription = editorState.transactionStream.listen((event) {
       if (event.$1 == TransactionTime.after) {
+        revision++;
         dirty = true;
         onChanged();
       }
@@ -37,6 +40,23 @@ class DocTab {
 
   String? filePath;
   bool dirty = false;
+  int revision = 0;
+  String? savePath;
+  String? _savedDestinationMarkdown;
+  bool get needsSave =>
+      dirty || (savePath != null && _savedDestinationMarkdown != toMarkdown());
+
+  void rememberSavedDestination(String path, String markdown) {
+    savePath = path;
+    _savedDestinationMarkdown = markdown;
+    if (!libraryManaged) {
+      filePath = path;
+      dirty = toMarkdown() != markdown;
+    }
+  }
+
+  void discardPendingChanges() => dirty = false;
+
   final bool libraryManaged;
 
   String get title {

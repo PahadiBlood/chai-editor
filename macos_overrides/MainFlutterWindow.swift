@@ -2,6 +2,7 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  private var filesChannel: FlutterMethodChannel?
   private var clipboardChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
@@ -36,6 +37,29 @@ class MainFlutterWindow: NSWindow {
         result(NSPasteboard.general.writeObjects([item]))
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    filesChannel = FlutterMethodChannel(
+      name: "chai/files",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    filesChannel?.setMethodCallHandler { call, result in
+      guard call.method == "reveal" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let args = call.arguments as? [String: Any],
+            let path = args["path"] as? String else {
+        result(FlutterError(code: "invalid_arguments", message: "Expected a path", details: nil))
+        return
+      }
+      let url = URL(fileURLWithPath: path)
+      if args["directory"] as? Bool == true {
+        result(NSWorkspace.shared.open(url))
+      } else {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        result(true)
       }
     }
 

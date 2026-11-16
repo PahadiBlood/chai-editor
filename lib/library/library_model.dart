@@ -27,6 +27,75 @@ class LibraryModel extends ChangeNotifier {
   DocTab? current;
   String? get openNote => current?.filePath;
   final _cache = <String, DocTab>{};
+  final _opened = <DocTab>{};
+  final _heldAutosaves = <DocTab>{};
+  final removedPaths = <String>{};
+  List<DocTab> get openTabs => _opened.toList();
+  List<DocTab> documentsUnder(String path) =>
+      {..._cache.values, if (current != null) current!}
+          .where(
+              (tab) => tab.filePath == path || p.isWithin(path, tab.filePath!))
+          .toList();
+  bool _isRemoved(String path) => removedPaths
+      .any((removed) => removed == path || p.isWithin(removed, path));
+
+  void holdAutosaves(Iterable<DocTab> tabs) {
+    for (final tab in tabs) {
+      _heldAutosaves.add(tab);
+      _timers.remove(tab)?.cancel();
+    }
+  }
+
+  void resumeAutosaves(Iterable<DocTab> tabs) {
+    for (final tab in tabs) {
+      _heldAutosaves.remove(tab);
+      if (_cache.containsValue(tab) && tab.dirty) _scheduleSave(tab);
+    }
+  }
+
+  void _scheduleSave(DocTab tab) {
+    _timers.remove(tab)?.cancel();
+    if (_heldAutosaves.contains(tab)) return;
+    _timers[tab] = Timer(
+        const Duration(milliseconds: 700),
+        () => _saveTab(tab)
+            .catchError((Object e) => debugPrint('Note save: $e')));
+  }
+
+  Future<void> saveNote(DocTab tab) => _saveTab(tab);
+
+  Future<void> closeDocuments(Iterable<DocTab> tabs) async {
+    ++_request;
+    for (final tab in tabs.toList()) {
+      final pending = _fileWrites[tab.filePath];
+      if (pending != null) await pending;
+      _timers.remove(tab)?.cancel();
+      _opened.remove(tab);
+      _cache.remove(tab.filePath);
+      if (identical(current, tab)) current = null;
+      _retire(tab);
+    }
+    current ??= _opened.lastOrNull;
+    selected = current?.filePath;
+    documentChanged.value++;
+    await saveState();
+    notifyListeners();
+  }
+
+  Future<void> removeFromEditor(String path) async {
+    if (!p.isWithin(service.root, path)) throw ArgumentError('Outside library');
+    removedPaths.add(path);
+    expanded.removeWhere((e) => e == path || p.isWithin(path, e));
+    await closeDocuments(documentsUnder(path));
+    await reload();
+  }
+
+  Future<void> showRemovedItems() async {
+    removedPaths.clear();
+    await reload();
+    await saveState();
+  }
+
   final _loading = <String, Future<DocTab>>{};
   final _fileWrites = <String, Future<void>>{};
   final _revisionByTab = <DocTab, int>{};
@@ -80,6 +149,7 @@ class LibraryModel extends ChangeNotifier {
   Future<void> initialize() async {
     await service.initialize();
     final state = await service.readState();
+    removedPaths.addAll((state['removed'] as List? ?? []).cast<String>());
     expanded = (state['expanded'] as List? ?? []).cast<String>().toSet();
     width = (state['width'] as num? ?? 260).toDouble().clamp(200, 380);
     hidden = state['hidden'] == true;
@@ -104,7 +174,12 @@ class LibraryModel extends ChangeNotifier {
   }
 
   Future<void> reload() async {
-    entries = await service.tree();
+    List<LibraryEntry> included(List<LibraryEntry> items) => [
+          for (final item in items)
+            if (!_isRemoved(item.path))
+              LibraryEntry(item.path, item.isFolder, included(item.children)),
+        ];
+    entries = included(await service.tree());
     deleted = await service.trash();
     if (current != null && !await File(current!.filePath!).exists()) {
       _autosave?.cancel();
@@ -150,12 +225,13 @@ class LibraryModel extends ChangeNotifier {
           onChanged: () {
             _revisionByTab[tab] = (_revisionByTab[tab] ?? 0) + 1;
             if (identical(tab, current)) status.value = 'Saving…';
-            _timers.remove(tab)?.cancel();
-            _timers[tab] = Timer(
-                const Duration(milliseconds: 700),
-                () => _saveTab(tab)
-                    .catchError((Object e) => debugPrint('Note save: $e')));
+            _scheduleSave(tab);
+            notifyListeners();
           });
+      if (_isRemoved(path)) {
+        tab.dispose();
+        throw StateError('Note removed while loading');
+      }
       _cache[path] = tab;
       _loading.remove(path);
       return tab;
@@ -175,7 +251,8 @@ class LibraryModel extends ChangeNotifier {
   void _evict() {
     for (final entry in _cache.entries.toList()) {
       if (_cache.length <= 8) break;
-      if (identical(entry.value, current) ||
+      if (_opened.contains(entry.value) ||
+          identical(entry.value, current) ||
           entry.value.dirty ||
           _fileWrites.containsKey(entry.key)) {
         continue;
@@ -194,13 +271,20 @@ class LibraryModel extends ChangeNotifier {
   }
 
   Future<void> open(String path) async {
+    if (_isRemoved(path)) {
+      removedPaths.removeWhere(
+          (removed) => removed == path || p.isWithin(removed, path));
+      await reload();
+    }
     if (!kCacheNotes) return _openUncached(path);
     final request = ++_request;
     selected = path;
     showingTrash = false;
     notifyListeners(); // Highlight before doing filesystem work.
     final previous = current;
-    if (previous != null && previous.dirty) {
+    if (previous != null &&
+        previous.dirty &&
+        !_heldAutosaves.contains(previous)) {
       unawaited(_saveTab(previous)
           .catchError((Object e) => debugPrint('Background save: $e')));
     }
@@ -210,6 +294,7 @@ class LibraryModel extends ChangeNotifier {
     _cache.remove(path);
     _cache[path] = tab;
     current = tab;
+    _opened.add(tab);
     tab.editorState.selection ??= tab.rememberedSelection;
     status.value = tab.dirty ? 'Saving…' : 'Saved';
     var parent = p.dirname(path);
@@ -286,7 +371,9 @@ class LibraryModel extends ChangeNotifier {
   Future<void> flush() async {
     if (!kCacheNotes) return _flushUncached();
     final tabs = {..._cache.values, if (current != null) current!};
-    await Future.wait(tabs.where((e) => e.dirty).map(_saveTab));
+    await Future.wait(tabs
+        .where((e) => e.dirty && !_heldAutosaves.contains(e))
+        .map(_saveTab));
     await Future.wait(_fileWrites.values.toList());
     await _writes;
   }
@@ -325,7 +412,8 @@ class LibraryModel extends ChangeNotifier {
         'selected': selected,
         'expanded': expanded.toList(),
         'width': width,
-        'hidden': hidden
+        'hidden': hidden,
+        'removed': removedPaths.toList(),
       };
   void persist() {
     _stateTimer?.cancel();
@@ -410,15 +498,21 @@ class LibraryModel extends ChangeNotifier {
             ? p.join(to, p.relative(value, from: from))
             : value;
     current?.filePath = map(current?.filePath);
+    current?.savePath = map(current?.savePath);
     final cached = _cache.entries.toList();
     _cache.clear();
     for (final entry in cached) {
       entry.value.filePath = map(entry.value.filePath);
+      entry.value.savePath = map(entry.value.savePath);
       _cache[map(entry.key)!] = entry.value;
     }
     documentChanged.value++;
     selected = map(selected);
     expanded = expanded.map((e) => map(e)!).toSet();
+    final remapped = removedPaths.map((e) => map(e)!).toList();
+    removedPaths
+      ..clear()
+      ..addAll(remapped);
   }
 
   Future<void> rename(String path, String name) async {
@@ -454,6 +548,8 @@ class LibraryModel extends ChangeNotifier {
     for (final entry in _cache.entries.toList()) {
       if (entry.key == path || p.isWithin(path, entry.key)) {
         _cache.remove(entry.key);
+        _opened.remove(entry.value);
+        _timers.remove(entry.value)?.cancel();
         _retire(entry.value);
       }
     }

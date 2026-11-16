@@ -10,7 +10,7 @@ enum _TabAction { newTab, open, save, saveAs, closeTab }
 
 const kShowToolbarNewNote =
     bool.fromEnvironment('CHAI_SHOW_TOOLBAR_NEW_NOTE', defaultValue: false);
-const kShowTabs = bool.fromEnvironment('CHAI_SHOW_TABS', defaultValue: false);
+const kShowTabs = bool.fromEnvironment('CHAI_SHOW_TABS', defaultValue: true);
 
 class EditorToolbar extends StatelessWidget {
   const EditorToolbar({
@@ -31,8 +31,12 @@ class EditorToolbar extends StatelessWidget {
     this.activeTab,
     this.breadcrumb,
     this.onExport,
+    this.onUndo,
+    this.onRedo,
   });
 
+  final VoidCallback? onUndo;
+  final VoidCallback? onRedo;
   final List<DocTab> tabs;
   final int currentIndex;
   final bool editing;
@@ -87,6 +91,16 @@ class EditorToolbar extends StatelessWidget {
                     if (breadcrumb != null)
                       SizedBox(width: 170, child: breadcrumb),
                     const _Divider(),
+                    if (onUndo != null)
+                      _ToolButton(
+                          icon: Icons.undo,
+                          tooltip: 'Undo  ⌘Z',
+                          onPressed: editing ? onUndo : null),
+                    if (onRedo != null)
+                      _ToolButton(
+                          icon: Icons.redo,
+                          tooltip: 'Redo  ⇧⌘Z',
+                          onPressed: editing ? onRedo : null),
                     _buildTextStyleMenu(),
                     _buildInlineButtons(),
                     const _Divider(),
@@ -172,7 +186,7 @@ class EditorToolbar extends StatelessWidget {
                 ),
                 Flexible(
                   child: Text(
-                    tabs[i].title + (tabs[i].dirty ? '  •' : ''),
+                    tabs[i].title + (tabs[i].needsSave ? '  •' : ''),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -224,7 +238,7 @@ class EditorToolbar extends StatelessWidget {
                   ),
                 ),
               ),
-              if (_tab.dirty && !_tab.libraryManaged)
+              if (_tab.needsSave)
                 const Padding(
                   padding: EdgeInsets.only(left: 5),
                   child: Icon(Icons.circle, size: 7, color: AppColors.accent),

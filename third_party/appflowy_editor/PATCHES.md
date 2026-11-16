@@ -25,3 +25,9 @@ transaction. The standard paste commands remain available without changes.
 The application uses this local package so a clean dependency install keeps the
 fix without modifying the shared pub cache. Remove the local dependency when
 an upstream release includes the callback and passes the app's build and tests.
+
+The two text-input services accept optional `onUndo`/`onRedo` callbacks and
+forward the macOS `undo:`/`redo:` selectors before inspecting text state. The
+keyboard service connects them to the active editor's history (editable only).
+Previously native Edit-menu actions reached `performSelector` and did nothing.
+The existing keyboard shortcut handlers remain unchanged.

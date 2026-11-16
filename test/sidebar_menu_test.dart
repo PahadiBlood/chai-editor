@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:chai_editor/library/library_model.dart';
 import 'package:chai_editor/library/library_service.dart';
 import 'package:chai_editor/theme.dart';
+import 'package:chai_editor/file_manager.dart';
 import 'package:chai_editor/widgets/sidebar.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -40,7 +41,7 @@ void main() {
       'Duplicate',
       'Move to',
       'Export',
-      'Show in Finder',
+      fileManagerLabel(),
       'Delete'
     ]) {
       expect(find.text(name), findsOneWidget);

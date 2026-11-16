@@ -4,9 +4,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../theme.dart';
+import '../doc_tab.dart';
+import '../file_manager.dart';
 import '../library/library_model.dart';
 import '../library/library_service.dart';
 
@@ -16,9 +17,20 @@ const _sidebarAccent = AppColors.white;
 
 class LibrarySidebar extends StatefulWidget {
   const LibrarySidebar(
-      {super.key, required this.onOpen, required this.onHide, this.onExport});
+      {super.key,
+      required this.onOpen,
+      required this.onHide,
+      this.onExport,
+      this.onRemove,
+      this.externalTabs = const [],
+      this.onOpenExternal,
+      this.onCloseExternal});
   final ValueChanged<String> onOpen;
   final VoidCallback onHide;
+  final Future<void> Function(String path)? onRemove;
+  final List<DocTab> externalTabs;
+  final ValueChanged<DocTab>? onOpenExternal;
+  final ValueChanged<DocTab>? onCloseExternal;
   final void Function(String path, String format)? onExport;
   @override
   State<LibrarySidebar> createState() => _LibrarySidebarState();
@@ -214,15 +226,25 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                 ]),
               )),
         const PopupMenuDivider(),
-        const PopupMenuItem(
-            height: 30, value: 'reveal', child: Text('Show in Finder')),
+        PopupMenuItem(
+            height: 30, value: 'reveal', child: Text(fileManagerLabel())),
+        if (widget.onRemove != null)
+          const PopupMenuItem(
+              height: 30, value: 'remove', child: Text('Remove from editor')),
         const PopupMenuDivider(),
         const PopupMenuItem(height: 30, value: 'delete', child: Text('Delete')),
       ],
+      if (entry == null && model.removedPaths.isNotEmpty)
+        const PopupMenuItem(
+            value: 'showRemoved', child: Text('Show removed items')),
     ]);
     _menuShowing = false;
     if (mounted) setState(() => _contextTarget = null);
     if (action == null) return;
+    if (action == 'remove') {
+      await widget.onRemove?.call(entry!.path);
+      return;
+    }
     await model.run(() async {
       switch (action) {
         case 'open':
@@ -239,11 +261,9 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
         case 'delete':
           await model.delete(entry!.path);
         case 'reveal':
-          final uri = Uri.directory(
-              entry!.isFolder ? entry.path : p.dirname(entry.path));
-          if (!await launchUrl(uri)) {
-            throw StateError('Could not open the file manager');
-          }
+          await revealFileLocation(entry!.path, isDirectory: entry.isFolder);
+        case 'showRemoved':
+          await model.showRemovedItems();
       }
     });
   }
@@ -271,123 +291,197 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
           m.expanded.join('|'),
           m.renamePath,
           m.showingTrash,
-          m.deleted
+          m.deleted,
+          m.removedPaths.join('|'),
         ));
     final model = context.read<LibraryModel>();
     return Focus(
       focusNode: _focus,
       onKeyEvent: (_, event) => _key(model, event),
-      child: _secondary((position) => _menu(model, position, null), GestureDetector(
-        onTap: () {
-          if (!_menuShowing) _focus.requestFocus();
-        },
-        onSecondaryTapUp: (details) =>
-            _menu(model, details.globalPosition, null),
-        child: Material(
-            color: AppColors.sidebar,
-            child: Column(children: [
-              SizedBox(
-                  height: 52,
-                  child:
-                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                    const Expanded(
-                        child: Padding(
-                      padding: EdgeInsets.only(left: 18),
-                      child: Text('Chai Editor',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: AppColors.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                    )),
-                    _createMenu(model, model.destination),
-                    IconButton(
-                        tooltip: 'Hide sidebar',
-                        icon: const Icon(Icons.view_sidebar_outlined, size: 20),
-                        onPressed: widget.onHide),
-                  ])),
-              _drop(
-                  model,
-                  model.service.root,
-                  Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 12, 12, 8),
-                        child: Text('On My Mac',
-                            style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12)),
-                      ))),
-              Expanded(
-                  child: model.showingTrash
-                      ? Column(children: [
-                          Row(children: [
-                            const SizedBox(width: 16),
-                            const Expanded(child: Text('Recently Deleted')),
-                            TextButton(
-                                onPressed: model.deleted.isEmpty
-                                    ? null
-                                    : () => _confirmPurge(model),
-                                child: const Text('Empty'))
-                          ]),
-                          Expanded(
-                              child: ListView(children: [
-                            for (final entry in model.deleted)
-                              _secondary(
-                                  (position) =>
-                                      _trashMenu(model, position, entry),
-                                  ListTile(
-                                      dense: true,
-                                      title: Text(entry.name,
-                                          overflow: TextOverflow.ellipsis),
-                                      subtitle: Text(
-                                          entry.isFolder ? 'Folder' : 'Note'),
-                                      trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                                tooltip: 'Restore',
-                                                icon: const Icon(Icons.restore,
-                                                    size: 18),
-                                                onPressed: () => model.run(() =>
-                                                    model.restore(entry))),
-                                            IconButton(
-                                                tooltip: 'Delete Permanently',
-                                                icon: const Icon(
-                                                    Icons
-                                                        .delete_forever_outlined,
-                                                    size: 18),
-                                                onPressed: () => _confirmPurge(
-                                                    model, entry)),
-                                          ]))),
-                          ])),
-                        ])
-                      : ListView(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: _secondary(
+          (position) => _menu(model, position, null),
+          GestureDetector(
+            onTap: () {
+              if (!_menuShowing) _focus.requestFocus();
+            },
+            onSecondaryTapUp: (details) =>
+                _menu(model, details.globalPosition, null),
+            child: Material(
+                color: AppColors.sidebar,
+                child: Column(children: [
+                  SizedBox(
+                      height: 52,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                              for (final entry in model.visible)
-                                _row(model, entry),
-                              const SizedBox(height: 80),
-                            ])),
-              _secondary(
-                  (position) => _trashMenu(model, position),
-                  ListTile(
-                      dense: true,
-                      selected: model.showingTrash,
-                      selectedColor: _sidebarAccent,
-                      leading: const Icon(Icons.delete_outline, size: 20),
-                      title: const Text('Recently Deleted'),
-                      onTap: () {
-                        _focus.requestFocus();
-                        model.showingTrash = !model.showingTrash;
-                        setState(() {});
-                      })),
-            ])),
-      )),
+                            const Expanded(
+                                child: Padding(
+                              padding: EdgeInsets.only(left: 18),
+                              child: Text('Chai Editor',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: AppColors.text,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600)),
+                            )),
+                            _createMenu(model, model.destination),
+                            IconButton(
+                                tooltip: 'Hide sidebar',
+                                icon: const Icon(Icons.view_sidebar_outlined,
+                                    size: 20),
+                                onPressed: widget.onHide),
+                          ])),
+                  _drop(
+                      model,
+                      model.service.root,
+                      Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 12, 12, 8),
+                            child: Text('On My Mac',
+                                style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12)),
+                          ))),
+                  if (widget.externalTabs.isNotEmpty) ...[
+                    const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                            padding: EdgeInsets.fromLTRB(18, 8, 12, 4),
+                            child: Text('Open files',
+                                style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 12)))),
+                    ConstrainedBox(
+                        constraints: BoxConstraints(
+                            maxHeight: MediaQuery.sizeOf(context).height * .25),
+                        child: ListView(shrinkWrap: true, children: [
+                          for (final tab in widget.externalTabs)
+                            _externalRow(tab),
+                        ])),
+                  ],
+                  Expanded(
+                      child: model.showingTrash
+                          ? Column(children: [
+                              Row(children: [
+                                const SizedBox(width: 16),
+                                const Expanded(child: Text('Recently Deleted')),
+                                TextButton(
+                                    onPressed: model.deleted.isEmpty
+                                        ? null
+                                        : () => _confirmPurge(model),
+                                    child: const Text('Empty'))
+                              ]),
+                              Expanded(
+                                  child: ListView(children: [
+                                for (final entry in model.deleted)
+                                  _secondary(
+                                      (position) =>
+                                          _trashMenu(model, position, entry),
+                                      ListTile(
+                                          dense: true,
+                                          title: Text(entry.name,
+                                              overflow: TextOverflow.ellipsis),
+                                          subtitle: Text(entry.isFolder
+                                              ? 'Folder'
+                                              : 'Note'),
+                                          trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                    tooltip: 'Restore',
+                                                    icon: const Icon(
+                                                        Icons.restore,
+                                                        size: 18),
+                                                    onPressed: () => model.run(
+                                                        () => model
+                                                            .restore(entry))),
+                                                IconButton(
+                                                    tooltip:
+                                                        'Delete Permanently',
+                                                    icon: const Icon(
+                                                        Icons
+                                                            .delete_forever_outlined,
+                                                        size: 18),
+                                                    onPressed: () =>
+                                                        _confirmPurge(
+                                                            model, entry)),
+                                              ]))),
+                              ])),
+                            ])
+                          : ListView(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              children: [
+                                  for (final entry in model.visible)
+                                    _row(model, entry),
+                                  const SizedBox(height: 80),
+                                ])),
+                  _secondary(
+                      (position) => _trashMenu(model, position),
+                      ListTile(
+                          dense: true,
+                          selected: model.showingTrash,
+                          selectedColor: _sidebarAccent,
+                          leading: const Icon(Icons.delete_outline, size: 20),
+                          title: const Text('Recently Deleted'),
+                          onTap: () {
+                            _focus.requestFocus();
+                            model.showingTrash = !model.showingTrash;
+                            setState(() {});
+                          })),
+                ])),
+          )),
     );
   }
+
+  Future<void> _externalMenu(DocTab tab, Offset position) async {
+    if (_menuShowing) return;
+    _menuShowing = true;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final action = await showMenu<String>(
+        context: context,
+        position: RelativeRect.fromRect(
+            position & const Size(1, 1), Offset.zero & overlay.size),
+        items: [
+          if (tab.filePath != null)
+            PopupMenuItem(value: 'reveal', child: Text(fileManagerLabel())),
+          const PopupMenuItem(
+              value: 'close', child: Text('Remove from editor')),
+        ]);
+    _menuShowing = false;
+    if (action == 'close') widget.onCloseExternal?.call(tab);
+    if (action == 'reveal') {
+      try {
+        await revealFileLocation(tab.filePath!);
+      } catch (error) {
+        debugPrint('Reveal file: $error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Couldn’t open this file location.')));
+        }
+      }
+    }
+  }
+
+  Widget _externalRow(DocTab tab) => _secondary(
+        (position) => _externalMenu(tab, position),
+        ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.description_outlined, size: 18),
+            title: Text('${tab.title}${tab.needsSave ? ' •' : ''}',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+            onTap: () => widget.onOpenExternal?.call(tab),
+            trailing: IconButton(
+                tooltip: 'Remove from editor',
+                icon: const Icon(Icons.close, size: 15),
+                onPressed: () => widget.onCloseExternal?.call(tab))),
+      );
 
   Widget _createMenu(LibraryModel model, String parent) =>
       PopupMenuButton<bool>(
@@ -506,6 +600,15 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                   color: AppColors.textMuted, fontSize: 12))),
+                if (widget.onRemove != null)
+                  IconButton(
+                    tooltip: 'Remove from editor',
+                    constraints:
+                        const BoxConstraints.tightFor(width: 28, height: 28),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close, size: 15),
+                    onPressed: () => widget.onRemove!(entry.path),
+                  ),
               ])),
         ));
     final draggable = LongPressDraggable<String>(
