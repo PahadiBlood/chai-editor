@@ -48,12 +48,12 @@ The logo source and PNG are in [assets/branding](assets/branding/README.md).
 | Area | Features |
 |---|---|
 | Documents | Open `.md`, `.markdown`, `.txt`. Save, Save as. Several documents in tabs. A dot marks unsaved changes. |
-| Text | Bold, italic, underline, strikethrough, inline code, links (`⌘K`), text and highlight colour. |
+| Text | Bold, italic, underline, strikethrough, inline code, links (`⌘K`), grey inline code. |
 | Blocks | Paragraph, Heading 1 to 3, bulleted list, numbered list, checklist, quote, code block, table, image, divider. |
-| Code blocks | Monospaced, language label, copy button. Enter adds a line, Enter on an empty last line leaves the block. |
+| Code blocks | Syntax-coloured, language/auto label, coloured-HTML copy button. Enter adds a line, Enter on an empty last line leaves the block. |
 | Menus | Toolbar buttons, a bubble toolbar on selected text, and a `/` menu in the document. |
 | Mode | Editing or Viewing (read only), from the menu at the top right. |
-| Paste | Cmd+V preserves HTML formatting and detects block Markdown. Explicit Markdown and plain-text paste are in the **+** menu. All modes paste raw text in code blocks. |
+| Paste | Cmd+V preserves HTML formatting and detects block Markdown. Explicit Markdown, plain-text and code-block paste are in the **+** menu. All modes paste raw text in code blocks. |
 
 ## Shortcuts
 
@@ -68,6 +68,8 @@ The logo source and PNG are in [assets/branding](assets/branding/README.md).
 | `⌘V` | Paste HTML, Markdown, or plain text |
 | `⌘⇧V` | Paste as plain text |
 | `⌘⌥⇧V` | Paste as Markdown |
+| `⌘⌥V` | Paste as Code Block |
+| `⌘C` / `⌘X` | Copy / Cut with Markdown and coloured HTML |
 | `/` | Open the block menu |
 | `⌘Z` `⇧⌘Z` | Undo, redo |
 
@@ -96,7 +98,8 @@ test/                  Markdown round-trip tests: flutter test
   keep its licence notices and share changes to its own files.
 - **Images** are stored in the Markdown as the full path on your Mac, so a
   document with local images works only on that machine.
-- **No syntax colouring** in code blocks yet.
+- **Syntax colours** use the block language or automatic detection. The rest of
+  the UI and inline code stay grey. PDF and Word use a light printing palette.
 - **Saving rewrites the Markdown** in a tidy form: blank line between blocks,
   `-` for bullets. Round-trip tests are in `test/`.
 - If CocoaPods complains about the macOS version, open `macos/Podfile` and set

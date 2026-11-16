@@ -133,9 +133,10 @@ installer for distribution to other users.
 ## Editing features
 
 - Clean dark interface with a folder-and-note tree, serif headings, and a compact toolbar.
-- Bold, italic, underline, strikethrough, inline code, links, and text/highlight colours.
+- Bold, italic, underline, strikethrough, links, and grey inline code.
 - Headings, lists, checklists, quotes, language-labelled code blocks, tables, images, and dividers.
 - Rich HTML paste, automatic block Markdown detection, and explicit paste modes.
+- Syntax-coloured code, coloured HTML copy/cut, and light-palette PDF/Word export.
 - Editing and read-only viewing modes, undo/redo, and unsaved-change indicators.
 
 | Shortcut | Action |
@@ -148,11 +149,37 @@ installer for distribution to other users.
 | ⌘V | Paste HTML, Markdown, or plain text |
 | ⌘⇧V | Paste as plain text |
 | ⌘⌥⇧V | Paste as Markdown |
+| ⌘⌥V | Paste as Code Block |
+| ⌘C / ⌘X | Copy / Cut with Markdown and rich HTML |
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | / | Open the block menu |
 
-Both explicit paste modes are also available in the toolbar's **+** menu.
+All three explicit paste modes are also available in the toolbar's **+** menu.
 Pasting inside a code block always inserts raw text.
+
+## Syntax colours and copying code
+
+Choose a code block's language from its label, or leave it on **auto**. Common
+languages are detected automatically; a muted **auto: python** label appears only
+when detection is confident. Detection never changes the saved Markdown fence.
+Aliases such as `js`, `ts`, `sh`, `zsh`, and `yml` are normalized.
+
+Code uses GitHub Dark-style colours while the rest of the interface stays
+black, white, and grey. Highlighting waits 150 ms after typing; blocks over
+20,000 characters stay plain grey. Inline code remains grey.
+
+**⌘V** recognizes HTML code copied as pre/code blocks or styled monospace/pre-wrap
+containers, keeping indentation and removing line-number gutters. For raw terminal
+text, use **⌘⌥V → Paste as Code Block**. Every paste mode inserts raw text when the
+cursor is already inside a code block.
+
+**⌘C**, **⌘X**, and the code block's copy button put fenced Markdown and HTML with
+inline token colours on the clipboard. A receiving app chooses which flavour to
+use; plain text destinations show Markdown fences. PDF and Word exports use the
+same tokenization with a light printing palette and grey code boxes.
+
+See [syntax-colour implementation and verification](docs/code-syntax.md) for
+coverage, dependency evaluation, and live-application checks.
 
 ## Update and check the project
 
@@ -179,7 +206,8 @@ Quit the old app and reopen the new build. If you installed a copy in
 - **`getcwd: Operation not permitted`:** leave and re-enter the checkout using
   `cd ..` and `cd chai-editor`, then retry.
 - **Markdown output:** saving normalizes Markdown formatting. Local image paths
-  refer to files on your Mac. Code blocks currently have no syntax colouring.
+  refer to files on your Mac. Code colours are regenerated from the fence language
+  when opening a note; source clipboard colours are not saved.
 
 More information:
 [editor guide](docs/editor-guide.md),

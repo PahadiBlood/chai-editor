@@ -10,6 +10,7 @@ from `macos_overrides/MainFlutterWindow.swift` and the custom app icon.
   plain-text implementation. Single rich paragraphs paste inline. Structured
   blocks follow the cursor block; an empty paragraph is replaced.
 - Cmd+Option+Shift+V (or **+ → Paste as Markdown**) always parses Markdown.
+- Cmd+Option+V (or **+ → Paste as Code Block**) wraps plain text as one code block.
 - Cmd+Shift+V (or **+ → Paste as plain text**) skips rich parsing.
 - Every mode pastes raw text inside a code block. Selection deletion and paste
   are combined into one transaction with a separate undo item. A final table or
@@ -46,6 +47,11 @@ applications and documents. They have not been performed by the automated tests.
 For each source, paste into a new note, over a selection and into a code block.
 Check that one Cmd+Z restores the original content and selection. Separately
 copy a single unformatted sentence and paste in the middle of a paragraph:
-it must stay inline. Try both explicit paste modes from the + menu and via
+it must stay inline. Try all three explicit paste modes from the + menu and via
 keyboard. HTML can preserve only semantics actually provided by its source;
 for example, an image-only representation of a checklist is not editable text.
+
+Code without a `<pre>` can also arrive through styled monospace or pre-wrap
+containers. Token colours are regenerated using Chai's palette; source span
+colours are discarded. See [code-syntax.md](code-syntax.md) for coloured copy/cut
+and export verification.
