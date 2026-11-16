@@ -305,3 +305,28 @@ The sidebar and Material theme now use greys and white. Header and folder-row
 
 See [phase verification and profile measurements](docs/phase-verification.md)
 and [export format details](docs/export-design.md) for test coverage and limits.
+
+## Storage setup and portability
+
+Chai Editor asks the operating system for the current user's Documents folder;
+it does not use the developer's username or home directory. On a sandboxed Mac,
+macOS places this inside that user's application container. This is normal.
+You do not need to create `.chai` or `.trash` yourself.
+
+Startup creates and checks storage before enabling the editor. Writes recreate
+missing parent folders, retry a disappeared-parent race once, and replace files
+atomically. Sidebar state and trash records now store relative paths, so new
+libraries can be copied to another location without retaining someone else's
+home-directory paths. Older state from the same library is accepted.
+
+If the default library cannot be opened or written, the app offers **Retry** or
+**Use app storage**. The latter creates a separate library in the OS-provided
+application-support directory and remembers the choice. It never moves or
+deletes existing notes. No automatic fallback to temporary storage is used.
+Internal errors are logged for diagnosis; the UI uses plain explanations rather
+than raw exceptions or private filesystem paths.
+
+After pulling an update, save and fully quit the old app, rebuild, and reopen
+`build/macos/Build/Products/Release/Chai Editor.app`. If you keep a copy in
+`~/Applications`, replace that copy using the installation commands above;
+building a new app does not update an older installed or running copy.
