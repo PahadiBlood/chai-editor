@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Chai Editor</title>
+  <desc id="desc">A cream document with an amber chai cup on a dark rounded square.</desc>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="#17191f"/>
+  <path d="M308 200H584L744 360V748Q744 800 692 800H308Q256 800 256 748V252Q256 200 308 200Z" fill="#f3eadd"/>
+  <path d="M584 200V316Q584 360 628 360H744Z" fill="#c9baa8"/>
+  <path d="M352 350H496M352 414H630" fill="none" stroke="#777069" stroke-width="24" stroke-linecap="round"/>
+  <path d="M602 536H626C706 536 706 648 626 648H598" fill="none" stroke="#bb6a37" stroke-width="32"/>
+  <path d="M352 520H614V604Q614 704 514 704H452Q352 704 352 604Z" fill="#bb6a37"/>
+  <path d="M384 550H582" fill="none" stroke="#e9b278" stroke-width="16" stroke-linecap="round"/>
+  <path d="M350 742H630" fill="none" stroke="#777069" stroke-width="20" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,29 @@
+import Cocoa
+import FlutterMacOS
+
+class MainFlutterWindow: NSWindow {
+  private var clipboardChannel: FlutterMethodChannel?
+
+  override func awakeFromNib() {
+    let flutterViewController = FlutterViewController()
+    let windowFrame = self.frame
+    self.contentViewController = flutterViewController
+    self.setFrame(windowFrame, display: true)
+
+    RegisterGeneratedPlugins(registry: flutterViewController)
+    clipboardChannel = FlutterMethodChannel(
+      name: "chai/clipboard",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    clipboardChannel?.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getHtml":
+        result(NSPasteboard.general.string(forType: .html))
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    super.awakeFromNib()
+  }
+}
