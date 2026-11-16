@@ -15,6 +15,7 @@ Map<String, dynamic> _parseNote(String markdown) =>
 const kCacheNotes = true;
 const kRestoreFolderSelection = false;
 const kSelectNextAfterDelete = false;
+const kLibraryAutosaveDelay = Duration(seconds: 5);
 
 class LibraryModel extends ChangeNotifier {
   LibraryModel(this.service);
@@ -57,7 +58,7 @@ class LibraryModel extends ChangeNotifier {
     _timers.remove(tab)?.cancel();
     if (_heldAutosaves.contains(tab)) return;
     _timers[tab] = Timer(
-        const Duration(milliseconds: 700),
+        kLibraryAutosaveDelay,
         () => _saveTab(tab)
             .catchError((Object e) => debugPrint('Note save: $e')));
   }
@@ -224,7 +225,7 @@ class LibraryModel extends ChangeNotifier {
           libraryManaged: true,
           onChanged: () {
             _revisionByTab[tab] = (_revisionByTab[tab] ?? 0) + 1;
-            if (identical(tab, current)) status.value = 'Saving…';
+            if (identical(tab, current)) status.value = 'Unsaved';
             _scheduleSave(tab);
             notifyListeners();
           });
@@ -296,7 +297,7 @@ class LibraryModel extends ChangeNotifier {
     current = tab;
     _opened.add(tab);
     tab.editorState.selection ??= tab.rememberedSelection;
-    status.value = tab.dirty ? 'Saving…' : 'Saved';
+    status.value = tab.dirty ? 'Unsaved' : 'Saved';
     var parent = p.dirname(path);
     while (p.isWithin(service.root, parent)) {
       expanded.add(parent);
@@ -312,6 +313,7 @@ class LibraryModel extends ChangeNotifier {
     _timers.remove(tab)?.cancel();
     if (!tab.dirty) return;
     final path = tab.filePath!;
+    if (!_disposed && identical(tab, current)) status.value = 'Saving…';
     final revision = _revisionByTab[tab] ?? 0;
     final text = tab.toMarkdown();
     final prior = _fileWrites[path] ?? Future<void>.value();
@@ -330,7 +332,7 @@ class LibraryModel extends ChangeNotifier {
       }
       if ((_revisionByTab[tab] ?? 0) == revision) tab.dirty = false;
       if (!_disposed && identical(tab, current)) {
-        status.value = tab.dirty ? 'Saving…' : 'Saved';
+        status.value = tab.dirty ? 'Unsaved' : 'Saved';
       }
     });
     _fileWrites[path] = write;
@@ -351,10 +353,9 @@ class LibraryModel extends ChangeNotifier {
         libraryManaged: true,
         onChanged: () {
           _revision++;
-          status.value = 'Saving…';
+          status.value = 'Unsaved';
           _autosave?.cancel();
-          _autosave =
-              Timer(const Duration(milliseconds: 700), () => run(flush));
+          _autosave = Timer(kLibraryAutosaveDelay, () => run(flush));
         });
     _retire(old);
     selected = path;

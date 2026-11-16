@@ -67,6 +67,47 @@ void main() {
   });
 
   testWidgets(
+      'toolbar keeps file actions in one menu and avoids duplicate inserts',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));
+    await tester.pumpAndSettle();
+
+    // Open, Save and Save As live in the document-name menu, not as repeated
+    // right-side icons. Table and image have their own direct buttons.
+    expect(find.byTooltip('Open  ⌘O'), findsNothing);
+    expect(find.byTooltip('Save  ⌘S'), findsNothing);
+    await tester.tap(find.byTooltip('Tabs and file'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open…        ⌘O'), findsOneWidget);
+    expect(find.text('Save        ⌘S'), findsOneWidget);
+    expect(find.text('Save as…        ⇧⌘S'), findsOneWidget);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Insert'));
+    await tester.pumpAndSettle();
+    expect(find.text('New Note'), findsNothing);
+    expect(find.text('Save As…'), findsNothing);
+    expect(find.text('Table'), findsNothing);
+    expect(find.text('Image…'), findsNothing);
+    expect(find.text('Code block'), findsOneWidget);
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Quote'), findsOneWidget);
+    await tester.tap(find.byTooltip('Text style'));
+    await tester.pumpAndSettle();
+    expect(find.text('Quote'), findsNothing);
+    expect(find.text('Code block'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
       'instant auto-scroll yields and can be stopped on a long document',
       (tester) async {
     final controller = ScrollController();

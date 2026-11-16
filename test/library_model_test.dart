@@ -7,6 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  test('library autosave waits five seconds after the last edit', () {
+    expect(kLibraryAutosaveDelay, const Duration(seconds: 5));
+  });
+
   test(
       'immediate exit flush and restart restore content, paths and sidebar state',
       () async {

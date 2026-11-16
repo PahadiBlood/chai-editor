@@ -111,16 +111,6 @@ class EditorToolbar extends StatelessWidget {
                 ),
               ),
             ),
-            _ToolButton(
-              icon: Icons.folder_open_rounded,
-              tooltip: 'Open  ⌘O',
-              onPressed: onOpen,
-            ),
-            _ToolButton(
-              icon: Icons.save_outlined,
-              tooltip: 'Save  ⌘S',
-              onPressed: onSave,
-            ),
             if (onExport != null)
               PopupMenuButton<String>(
                   tooltip: 'Export',
@@ -271,10 +261,6 @@ class EditorToolbar extends StatelessWidget {
             toHeading(_state, 2);
           case 'h3':
             toHeading(_state, 3);
-          case 'quote':
-            toQuote(_state);
-          case 'code':
-            toCodeBlock(_state);
         }
       },
       itemBuilder: (_) => const [
@@ -303,9 +289,6 @@ class EditorToolbar extends StatelessWidget {
             style: TextStyle(fontFamily: serifFont, fontSize: 15),
           ),
         ),
-        PopupMenuDivider(),
-        PopupMenuItem(value: 'quote', height: 34, child: Text('Quote')),
-        PopupMenuItem(value: 'code', height: 34, child: Text('Code block')),
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -434,12 +417,8 @@ class EditorToolbar extends StatelessWidget {
           enabled: editing,
           onSelected: (value) {
             switch (value) {
-              case 'new':
-                onNew();
               case 'import':
                 onImport?.call();
-              case 'saveAs':
-                onSaveAs();
               case 'pasteCode':
                 pasteAsCodeBlockCommand.handler(_state);
               case 'pasteMarkdown':
@@ -451,18 +430,12 @@ class EditorToolbar extends StatelessWidget {
                     .handler(_state);
               case 'code':
                 insertCodeBlock(_state);
-              case 'table':
-                insertTable(_state);
-              case 'image':
-                onPickImage();
               case 'divider':
                 insertDivider(_state);
             }
           },
           itemBuilder: (_) => const [
-            PopupMenuItem(value: 'new', child: Text('New Note')),
             PopupMenuItem(value: 'import', child: Text('Import Markdown…')),
-            PopupMenuItem(value: 'saveAs', child: Text('Save As…')),
             PopupMenuItem(
                 value: 'pasteMarkdown',
                 height: 34,
@@ -477,8 +450,6 @@ class EditorToolbar extends StatelessWidget {
                 child: Text('Paste as Code Block    ⌘⌥V')),
             PopupMenuDivider(),
             PopupMenuItem(value: 'code', height: 34, child: Text('Code block')),
-            PopupMenuItem(value: 'table', height: 34, child: Text('Table')),
-            PopupMenuItem(value: 'image', height: 34, child: Text('Image…')),
             PopupMenuItem(value: 'divider', height: 34, child: Text('Divider')),
           ],
           child: Padding(
