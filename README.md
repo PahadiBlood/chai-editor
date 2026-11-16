@@ -290,3 +290,18 @@ It reloads the tree when activated so external file-manager changes appear.
 The former tab dropdown remains available using
 `--dart-define=CHAI_SHOW_TABS=true`; it is hidden by default. The pinned editor
 remains at 6.1.0. See [library verification](docs/library-verification.md).
+
+## PDF and Word export
+
+Use the **Export** button next to Open/Save, or right-click a note and choose
+**Export → PDF / Word / Markdown**. PDF uses a white A4 page, embedded Noto fonts,
+wrapped code and bordered tables. Word exports real styles, lists and tables;
+images currently appear by file name. The save dialog uses the note name, and
+an **Exported → Show in Finder** action opens the output folder.
+
+The sidebar and Material theme now use greys and white. Header and folder-row
+**+** menus create notes/folders; the toolbar New Note icon is hidden by default
+(`--dart-define=CHAI_SHOW_TOOLBAR_NEW_NOTE=true` restores it).
+
+See [phase verification and profile measurements](docs/phase-verification.md)
+and [export format details](docs/export-design.md) for test coverage and limits.
