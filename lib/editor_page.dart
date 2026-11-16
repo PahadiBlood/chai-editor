@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 
@@ -9,10 +10,16 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'library/library_model.dart';
 import 'library/library_service.dart';
 import 'widgets/sidebar.dart';
+import 'widgets/document_switcher.dart';
+import 'export/export_model.dart';
+import 'export/pdf_exporter.dart';
+import 'export/docx_exporter.dart';
+import 'markdown_io.dart';
 import 'actions.dart';
 import 'code_block.dart';
 import 'doc_tab.dart';
@@ -31,7 +38,11 @@ class EditorPage extends StatefulWidget {
   State<EditorPage> createState() => _EditorPageState();
 }
 
-class _EditorPageState extends State<EditorPage> {
+class _EditorPageState extends State<EditorPage>
+    with SingleTickerProviderStateMixin {
+  late final _sidebarAnimation = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 220), value: 1);
+  Object? _lastLibrarySignature;
   final List<DocTab> _tabs = [];
   int _current = 0;
   bool _editing = true;
@@ -51,6 +62,7 @@ class _EditorPageState extends State<EditorPage> {
           LibraryService(Directory(p.join(directory!.path, 'ChaiEditor'))));
       _library = model;
       model.addListener(_libraryChanged);
+      model.focusEditor.addListener(_focusDocument);
       await model.initialize();
       if (!mounted) return;
       _libraryChanged();
@@ -59,9 +71,32 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
+  void _focusDocument() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _library?.current != null) {
+        final tab = _library!.current!;
+        tab.editorState.selection ??=
+            tab.rememberedSelection ?? Selection.collapsed(Position(path: [0]));
+        tab.focusNode.requestFocus();
+      }
+    });
+  }
+
   void _libraryChanged() {
     if (!mounted) return;
-    setState(() {});
+    final signature = (
+      _library?.current,
+      _library?.openNote,
+      _library?.hidden,
+      _library?.width,
+      _library?.error
+    );
+    if (_lastLibrarySignature != signature) {
+      _lastLibrarySignature = signature;
+      _sidebarAnimation.animateTo(_library?.hidden == true ? 0 : 1,
+          curve: Curves.easeInOutCubic);
+      setState(() {});
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _library?.collect();
     });
@@ -109,7 +144,7 @@ class _EditorPageState extends State<EditorPage> {
       if (choice == _Unsaved.cancel) return;
       if (choice == _Unsaved.save && !await _save()) return;
     }
-    await library.run(() => library.open(path));
+    await library.open(path);
     if (mounted) {
       setState(() => _external = false);
       _scaffoldKey.currentState?.closeDrawer();
@@ -162,7 +197,7 @@ class _EditorPageState extends State<EditorPage> {
     ...standardCharacterShortcutEvents.where((e) => e != slashCommand),
     customSlashCommand(
       [...standardSelectionMenuItems, codeBlockMenuItem],
-      style: SelectionMenuStyle.dark,
+      style: kMonochromeEditorMenus ? monochromeSelectionMenu : SelectionMenuStyle.dark,
     ),
   ];
 
@@ -199,6 +234,7 @@ class _EditorPageState extends State<EditorPage> {
 
   @override
   void dispose() {
+    _sidebarAnimation.dispose();
     _lifecycle?.dispose();
     _library?.removeListener(_libraryChanged);
     _library?.dispose();
@@ -351,6 +387,54 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
+  Future<void> _export(String format, {String? path}) async {
+    try {
+      await _library?.flush();
+      final Document document;
+      if (path == null || path == _tab.filePath) {
+        document = Document.fromJson(_tab.editorState.document.toJson());
+      } else {
+        document = markdownToEditorDocument(await File(path).readAsString());
+      }
+      final name =
+          p.basenameWithoutExtension(path ?? _tab.filePath ?? 'Untitled');
+      final target = await FilePicker.platform.saveFile(
+          dialogTitle: 'Export $name',
+          fileName: '$name.$format',
+          type: FileType.custom,
+          allowedExtensions: [format]);
+      if (target == null) return;
+      final destination = target.toLowerCase().endsWith('.$format')
+          ? target
+          : '$target.$format';
+      final model = ExportModel.fromDocument(document);
+      final bytes = switch (format) {
+        'pdf' => await PdfExporter().export(model),
+        'docx' => DocxExporter().export(model),
+        _ => utf8.encode(editorDocumentToMarkdown(document)),
+      };
+      await Directory(p.dirname(destination)).create(recursive: true);
+      final temp =
+          File('$destination.${DateTime.now().microsecondsSinceEpoch}.tmp');
+      try {
+        await temp.writeAsBytes(bytes, flush: true);
+        await temp.rename(destination);
+      } finally {
+        if (await temp.exists()) await temp.delete();
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Exported'),
+          action: SnackBarAction(
+              label: 'Show in Finder',
+              onPressed: () =>
+                  launchUrl(Uri.directory(p.dirname(destination))))));
+    } catch (e) {
+      _toast('Couldn’t export this note. Check the destination and try again.');
+      debugPrint('Export: $e');
+    }
+  }
+
   Future<void> _pickImage() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -411,24 +495,73 @@ class _EditorPageState extends State<EditorPage> {
             : Drawer(width: _library!.width, child: _sidebar()),
         body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
           final wide = constraints.maxWidth >= 760;
+          final documentWidth = (wide && _library != null
+                  ? constraints.maxWidth - _library!.width - 5
+                  : constraints.maxWidth)
+              .clamp(0.0, 860.0);
           final editor = Column(
             children: [
-              EditorToolbar(
-                activeTab: _tab,
-                tabs: _tabs,
-                currentIndex: _current,
-                editing: _editing,
-                onSelectTab: (i) => setState(() => _current = i),
-                onNew: _newNote,
-                onToggleSidebar: widget.enableLibrary ? _toggleSidebar : null,
-                onImport: widget.enableLibrary ? _importNote : null,
-                onOpen: _open,
-                onSave: _save,
-                onSaveAs: () => _save(saveAs: true),
-                onCloseTab: _closeCurrentTab,
-                onPickImage: _pickImage,
-                onEditingChanged: (value) => setState(() => _editing = value),
-              ),
+              RepaintBoundary(
+                  child: AnimatedBuilder(
+                      animation: _sidebarAnimation,
+                      builder: (context, child) => Padding(
+                          padding: EdgeInsets.only(
+                              left: Platform.isMacOS && widget.enableLibrary
+                                  ? (wide
+                                      ? 80 * (1 - _sidebarAnimation.value)
+                                      : 80)
+                                  : 0),
+                          child: child),
+                      child: EditorToolbar(
+                        activeTab: _tab,
+                        breadcrumb: _library == null || _external
+                            ? null
+                            : ValueListenableBuilder<String>(
+                                valueListenable: _library!.status,
+                                builder: (context, status, child) => Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                          _library!.openNote == null
+                                              ? 'No note selected'
+                                              : p
+                                                  .withoutExtension(p.relative(
+                                                      _library!.openNote!,
+                                                      from: _library!
+                                                          .service.root))
+                                                  .split(p.separator)
+                                                  .join(' / '),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              color: AppColors.text)),
+                                      Text(status,
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textMuted)),
+                                    ]),
+                              ),
+                        tabs: _tabs,
+                        currentIndex: _current,
+                        editing: _editing,
+                        onSelectTab: (i) => setState(() => _current = i),
+                        onNew: _newNote,
+                        onToggleSidebar: widget.enableLibrary &&
+                                (!wide || _library?.hidden != false)
+                            ? _toggleSidebar
+                            : null,
+                        onImport: widget.enableLibrary ? _importNote : null,
+                        onOpen: _open,
+                        onExport: _export,
+                        onSave: _save,
+                        onSaveAs: () => _save(saveAs: true),
+                        onCloseTab: _closeCurrentTab,
+                        onPickImage: _pickImage,
+                        onEditingChanged: (value) =>
+                            setState(() => _editing = value),
+                      ))),
               if (_library?.error != null)
                 MaterialBanner(content: Text(_library!.error!), actions: [
                   TextButton(
@@ -443,35 +576,67 @@ class _EditorPageState extends State<EditorPage> {
                           !_external &&
                           _library!.current == null
                       ? Center(
-                          child: TextButton.icon(
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                          const Text('No note selected'),
+                          const SizedBox(height: 12),
+                          TextButton.icon(
                               onPressed: _newNote,
                               icon: const Icon(Icons.note_add_outlined),
-                              label: const Text('Create a note')))
-                      : _buildEditor(_tab,
-                          compact: constraints.maxWidth -
-                                  (wide && _library?.hidden == false
-                                      ? _library!.width
-                                      : 0) <
-                              600)),
+                              label: const Text('New Note'))
+                        ]))
+                      : RepaintBoundary(
+                          child: DocumentSwitcher(
+                              identity: _tab,
+                              child: Center(
+                                  child: SizedBox(
+                                      width: documentWidth,
+                                      child: _buildEditor(_tab,
+                                          compact: documentWidth < 600)))))),
             ],
           );
-          if (!wide || _library == null || _library!.hidden) {
-            return Padding(
-                padding: EdgeInsets.only(
-                    top: Platform.isMacOS && widget.enableLibrary ? 52 : 0),
-                child: editor);
+          if (!wide || _library == null) {
+            // Reserve only horizontal space for traffic lights; the row stays 52 pt.
+            return editor;
           }
-          return Row(children: [
-            SizedBox(width: _library!.width, child: _sidebar()),
-            MouseRegion(
-                cursor: SystemMouseCursors.resizeColumn,
-                child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragUpdate: (details) =>
-                        _library!.resize(_library!.width + details.delta.dx),
-                    child: const SizedBox(width: 5, height: double.infinity))),
-            Expanded(child: editor)
-          ]);
+          final sidebar = SizedBox(
+              width: _library!.width,
+              child: RepaintBoundary(child: _sidebar()));
+          final handle = MouseRegion(
+              cursor: SystemMouseCursors.resizeColumn,
+              child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: (details) =>
+                      _library!.resize(_library!.width + details.delta.dx),
+                  child: const SizedBox(
+                      width: 5,
+                      height: double.infinity,
+                      child: VerticalDivider(
+                          width: 1, thickness: 1, color: AppColors.border))));
+          return AnimatedBuilder(
+              animation: _sidebarAnimation,
+              child: editor,
+              builder: (context, child) {
+                final progress = _sidebarAnimation.value;
+                return Row(children: [
+                  IgnorePointer(
+                      ignoring: _sidebarAnimation.isAnimating || progress == 0,
+                      child: ClipRect(
+                          child: Align(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: progress,
+                              child: SizedBox(
+                                  width: _library!.width + 5,
+                                  child: Row(children: [
+                                    Expanded(
+                                        child: FadeTransition(
+                                            opacity: _sidebarAnimation,
+                                            child: sidebar)),
+                                    handle
+                                  ]))))),
+                  Expanded(child: child!),
+                ]);
+              });
         })),
       ),
     );
@@ -481,6 +646,7 @@ class _EditorPageState extends State<EditorPage> {
       value: _library!,
       child: LibrarySidebar(
         onOpen: _openLibrary,
+        onExport: (path, format) => _export(format, path: path),
         onHide: () {
           if (_scaffoldKey.currentState?.isDrawerOpen == true) {
             _scaffoldKey.currentState?.closeDrawer();
@@ -495,6 +661,7 @@ class _EditorPageState extends State<EditorPage> {
     final key = ValueKey('${identityHashCode(tab)}-$_editing');
 
     return FloatingToolbar(
+      style: kMonochromeEditorMenus ? monochromeFloatingToolbar : const FloatingToolbarStyle(),
       key: key,
       items: [
         paragraphItem,
@@ -511,6 +678,7 @@ class _EditorPageState extends State<EditorPage> {
       textDirection: TextDirection.ltr,
       editorScrollController: tab.scrollController,
       child: AppFlowyEditor(
+        focusNode: tab.focusNode,
         editorState: state,
         editorScrollController: tab.scrollController,
         editorStyle: compact ? buildEditorStyle(compact: true) : _editorStyle,

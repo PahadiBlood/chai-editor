@@ -11,13 +11,20 @@ class AppColors {
   static const border = Color(0xFF26262A);
   static const text = Color(0xFFF2F2F2);
   static const textMuted = Color(0xFF9A9AA0);
-  static const accent = Color(0xFF7AA2F7);
+  static const white = Color(0xFFFFFFFF);
+  static const black = Color(0xFF000000);
+  static const transparent = Color(0x00000000);
+  static const sidebar = Color(0xFF101012);
+  static const hover = Color(0xFF17171A);
+  static const selected = Color(0xFF242428);
+  static const textFaint = Color(0xFF6B6B70);
+  static const accent = white;
   static const codeBackground = Color(0xFF151517);
   static const codeText = Color(0xFFE6E6E6);
   static const inlineCodeBackground = Color(0xFF1E1E21);
-  static const inlineCode = Color(0xFFF0A868);
-  static const link = Color(0xFF7AA2F7);
-  static const selection = Color(0x553B82F6);
+  static const inlineCode = codeText;
+  static const link = white;
+  static const selection = Color(0x33FFFFFF);
 }
 
 const String serifFont = 'Georgia';
@@ -27,16 +34,44 @@ ThemeData buildTheme() {
   final base = ThemeData.dark(useMaterial3: true);
   return base.copyWith(
     scaffoldBackgroundColor: AppColors.background,
-    colorScheme: base.colorScheme.copyWith(
-      primary: AppColors.accent,
+    colorScheme: const ColorScheme.dark(
+      primary: AppColors.white,
+      onPrimary: AppColors.black,
+      secondary: AppColors.textMuted,
+      onSecondary: AppColors.black,
+      tertiary: AppColors.textMuted,
+      onTertiary: AppColors.black,
+      error: AppColors.white,
+      onError: AppColors.black,
       surface: AppColors.background,
+      onSurface: AppColors.text,
+      surfaceTint: AppColors.transparent,
+      outline: AppColors.border,
     ),
+    focusColor: AppColors.selected,
+    hoverColor: AppColors.hover,
+    highlightColor: AppColors.selected,
+    splashColor: AppColors.selection,
+    textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: AppColors.white,
+        selectionColor: AppColors.selection,
+        selectionHandleColor: AppColors.white),
+    iconTheme: const IconThemeData(color: AppColors.textMuted, size: 19),
+    inputDecorationTheme: const InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: AppColors.textMuted))),
+    snackBarTheme: const SnackBarThemeData(
+        backgroundColor: AppColors.selected,
+        contentTextStyle: TextStyle(color: AppColors.text)),
+    dialogTheme: const DialogThemeData(
+        backgroundColor: AppColors.sidebar,
+        surfaceTintColor: AppColors.transparent),
     dividerColor: AppColors.border,
     popupMenuTheme: PopupMenuThemeData(
-      color: const Color(0xFF1B1B1E),
-      surfaceTintColor: Colors.transparent,
+      color: AppColors.sidebar,
+      surfaceTintColor: AppColors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         side: const BorderSide(color: AppColors.border),
       ),
       textStyle: const TextStyle(color: AppColors.text, fontSize: 13),
@@ -104,3 +139,26 @@ Map<String, BlockComponentBuilder> buildBlockBuilders() {
     ),
   };
 }
+
+const kMonochromeEditorMenus = bool.fromEnvironment('CHAI_MONOCHROME_MENUS', defaultValue: true);
+const monochromeSelectionMenu = SelectionMenuStyle(
+  selectionMenuBackgroundColor: AppColors.sidebar,
+  selectionMenuItemTextColor: AppColors.text,
+  selectionMenuItemIconColor: AppColors.textMuted,
+  selectionMenuItemSelectedTextColor: AppColors.white,
+  selectionMenuItemSelectedIconColor: AppColors.white,
+  selectionMenuItemSelectedColor: AppColors.selected,
+  selectionMenuUnselectedLabelColor: AppColors.textMuted,
+  selectionMenuDividerColor: AppColors.border,
+  selectionMenuLinkBorderColor: AppColors.border,
+  selectionMenuInvalidLinkColor: AppColors.textMuted,
+  selectionMenuButtonColor: AppColors.selected,
+  selectionMenuButtonTextColor: AppColors.white,
+  selectionMenuButtonIconColor: AppColors.white,
+  selectionMenuButtonBorderColor: AppColors.border,
+  selectionMenuTabIndicatorColor: AppColors.white,
+);
+const monochromeFloatingToolbar = FloatingToolbarStyle(
+  toolbarActiveColor: AppColors.white,
+  backgroundColor: AppColors.sidebar,
+);

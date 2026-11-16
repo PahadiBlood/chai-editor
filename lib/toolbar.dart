@@ -8,6 +8,8 @@ import 'theme.dart';
 
 enum _TabAction { newTab, open, save, saveAs, closeTab }
 
+const kShowToolbarNewNote =
+    bool.fromEnvironment('CHAI_SHOW_TOOLBAR_NEW_NOTE', defaultValue: false);
 const kShowTabs = bool.fromEnvironment('CHAI_SHOW_TABS', defaultValue: false);
 
 class EditorToolbar extends StatelessWidget {
@@ -27,6 +29,8 @@ class EditorToolbar extends StatelessWidget {
     this.onToggleSidebar,
     this.onImport,
     this.activeTab,
+    this.breadcrumb,
+    this.onExport,
   });
 
   final List<DocTab> tabs;
@@ -43,6 +47,8 @@ class EditorToolbar extends StatelessWidget {
   final VoidCallback? onToggleSidebar;
   final VoidCallback? onImport;
   final DocTab? activeTab;
+  final Widget? breadcrumb;
+  final ValueChanged<String>? onExport;
 
   DocTab get _tab => activeTab ?? tabs[currentIndex];
   EditorState get _state => _tab.editorState;
@@ -70,12 +76,16 @@ class EditorToolbar extends StatelessWidget {
                           tooltip: 'Show sidebar',
                           icon: const Icon(Icons.view_sidebar_outlined),
                           onPressed: onToggleSidebar),
-                    if (kShowTabs || onToggleSidebar == null) _buildTabMenu(),
-                    if (!kShowTabs && onToggleSidebar != null)
+                    if (kShowTabs || onImport == null) _buildTabMenu(),
+                    if (kShowToolbarNewNote &&
+                        !kShowTabs &&
+                        onToggleSidebar != null)
                       _ToolButton(
                           icon: Icons.note_add_outlined,
                           tooltip: 'New note',
                           onPressed: onNew),
+                    if (breadcrumb != null)
+                      SizedBox(width: 170, child: breadcrumb),
                     const _Divider(),
                     _buildTextStyleMenu(),
                     _buildInlineButtons(),
@@ -97,8 +107,27 @@ class EditorToolbar extends StatelessWidget {
               tooltip: 'Save  ⌘S',
               onPressed: onSave,
             ),
+            if (onExport != null)
+              PopupMenuButton<String>(
+                  tooltip: 'Export',
+                  requestFocus: false,
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.ios_share_outlined, size: 19),
+                  onSelected: onExport,
+                  itemBuilder: (_) => const [
+                        PopupMenuItem(
+                            value: 'pdf', height: 30, child: Text('PDF…')),
+                        PopupMenuItem(
+                            value: 'docx',
+                            height: 30,
+                            child: Text('Word (.docx)…')),
+                        PopupMenuItem(
+                            value: 'md',
+                            height: 30,
+                            child: Text('Markdown (.md)…'))
+                      ]),
             const SizedBox(width: 6),
-            _buildModeMenu(),
+            _buildModeMenu(compact: MediaQuery.sizeOf(context).width < 600),
           ],
         ),
       ),
@@ -457,7 +486,7 @@ class EditorToolbar extends StatelessWidget {
 
   // ---- Editing / Viewing --------------------------------------------------
 
-  Widget _buildModeMenu() {
+  Widget _buildModeMenu({bool compact = false}) {
     return PopupMenuButton<bool>(
       tooltip: 'Mode',
       onSelected: onEditingChanged,
@@ -476,10 +505,11 @@ class EditorToolbar extends StatelessWidget {
               color: AppColors.text,
             ),
             const SizedBox(width: 6),
-            Text(
-              editing ? 'Editing' : 'Viewing',
-              style: const TextStyle(fontSize: 14, color: AppColors.text),
-            ),
+            if (!compact)
+              Text(
+                editing ? 'Editing' : 'Viewing',
+                style: const TextStyle(fontSize: 14, color: AppColors.text),
+              ),
             const Icon(
               Icons.keyboard_arrow_down_rounded,
               size: 18,
@@ -518,7 +548,7 @@ class _ToolButton extends StatelessWidget {
           height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF26262A) : Colors.transparent,
+            color: active ? AppColors.selected : AppColors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Icon(

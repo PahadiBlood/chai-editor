@@ -28,5 +28,8 @@ class MainFlutterWindow: NSWindow {
     titlebarAppearsTransparent = true
     titleVisibility = .hidden
     styleMask.insert(.fullSizeContentView)
+    backgroundColor = NSColor(srgbRed: 11.0 / 255, green: 11.0 / 255, blue: 12.0 / 255, alpha: 1)
+    flutterViewController.view.frame = contentView!.bounds
+    flutterViewController.view.autoresizingMask = [.width, .height]
   }
 }

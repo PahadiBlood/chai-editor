@@ -10,3 +10,8 @@ AGPL-3.0 / MPL-2.0 dual licensing. Its original licence is in
 comply with the chosen upstream licence when distributing that component.
 Other dependencies retain their respective terms. Flutter's About dialog
 licence registry includes dependency notices supplied by packages.
+
+PDF exports bundle unmodified Noto fonts from https://github.com/notofonts/noto-fonts
+under the SIL Open Font License 1.1. The upstream copyright and licence text is
+included in [assets/fonts/OFL.txt](assets/fonts/OFL.txt). The fonts retain their
+own licence and are not covered by the root Unlicense.
