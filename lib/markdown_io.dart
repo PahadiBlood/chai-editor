@@ -86,15 +86,19 @@ String _block(Node node, {int number = 1}) {
       return _listItem(node, checked ? '- [x] ' : '- [ ] ');
 
     case 'quote':
-      return _inline(node)
-          .split('\n')
-          .map((line) => '> $line')
-          .join('\n');
+      return _inline(node).split('\n').map((line) => '> $line').join('\n');
 
     case 'code':
-      final language = (node.attributes[CodeBlockKeys.language] as String?) ?? '';
+      final language =
+          (node.attributes[CodeBlockKeys.language] as String?) ?? '';
       final text = node.delta?.toPlainText() ?? '';
-      return '```$language\n$text\n```';
+      // An embedded fence must remain literal code when copied or reopened.
+      final longest = RegExp(r'`+').allMatches(text).fold<int>(
+          2,
+          (length, match) =>
+              match[0]!.length > length ? match[0]!.length : length);
+      final fence = '`' * (longest + 1);
+      return '$fence$language\n$text\n$fence';
 
     case 'divider':
       return '---';

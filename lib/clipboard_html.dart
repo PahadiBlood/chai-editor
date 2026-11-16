@@ -3,6 +3,11 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 
 import 'code_block.dart';
+import 'code_syntax.dart';
+
+// Retain the former external-pre newline trimming for compatibility if needed.
+const trimExternalPreNewline =
+    bool.fromEnvironment('CHAI_TRIM_EXTERNAL_PRE_NEWLINE', defaultValue: false);
 
 /// Decode clipboard fragments without browser metadata or executable content.
 /// A DOM-to-node conversion avoids Markdown escaping and preserves rich deltas.
@@ -17,11 +22,12 @@ Document clipboardHtmlToDocument(String source) {
   )) {
     element.remove();
   }
+  final body = document.body;
   return Document(
       root: Node(
           type: 'page',
           children: _blocks(
-            document.body?.nodes ?? [],
+            body != null && _isCodeContainer(body) ? [body] : body?.nodes ?? [],
           )));
 }
 
@@ -68,27 +74,34 @@ List<Node> _blocks(Iterable<dom.Node> source) {
       continue;
     }
     final tag = child.localName;
+    if (_isCodeContainer(child)) {
+      flush();
+      final code = child.querySelector('code');
+      final language = _codeLanguage(child);
+      var text = _preText(tag == 'pre' ? (code ?? child) : child)
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n')
+          .replaceAll('\u00a0', ' ');
+      // Code whitespace is content. Keep the former layout-newline trimming
+      // available behind a flag, while exact clipboard round trips stay intact.
+      if (trimExternalPreNewline &&
+          tag == 'pre' &&
+          child.attributes['data-chai-code'] != 'true' &&
+          text.endsWith('\n')) {
+        text = text.substring(0, text.length - 1);
+      }
+      result.add(codeBlockNode(text: text, language: language));
+      continue;
+    }
     // Clipboard producers often wrap a whole document in a span or <b>.
     if (!_blockTags.contains(tag) &&
-        child.querySelectorAll(_blockTags.join(',')).isEmpty) {
+        child.querySelectorAll(_blockTags.join(',')).isEmpty &&
+        !child.querySelectorAll('[style], code').any(_isCodeContainer)) {
       inline.add(child);
       continue;
     }
     flush();
-    if (tag == 'pre') {
-      final code = child.querySelector('code');
-      final languageSource = [child, if (code != null) code];
-      var language = '';
-      for (final element in languageSource) {
-        language = element.attributes['data-language'] ?? language;
-        final match = RegExp(r'(?:language|lang)-([\w+#.-]+)')
-            .firstMatch(element.className);
-        language = match?.group(1) ?? language;
-      }
-      var text = _preText(code ?? child).replaceAll('\r\n', '\n');
-      if (text.endsWith('\n')) text = text.substring(0, text.length - 1);
-      result.add(codeBlockNode(text: text, language: language));
-    } else if (tag == 'ul' || tag == 'ol') {
+    if (tag == 'ul' || tag == 'ol') {
       var number = int.tryParse(child.attributes['start'] ?? '') ?? 1;
       for (final item in child.children.where((e) => e.localName == 'li')) {
         final content = _blocks(item.nodes);
@@ -161,7 +174,12 @@ List<Node> _blocks(Iterable<dom.Node> source) {
       result
           .add(headingNode(level: int.parse(tag![1]), delta: _inline([child])));
     } else if ((tag == 'p' || tag == 'div') &&
-        child.querySelectorAll(_blockTags.join(',')).isEmpty) {
+        child.querySelectorAll(_blockTags.join(',')).isEmpty &&
+        !child.querySelectorAll('[style], code').any((element) =>
+            _isCodeContainer(element) &&
+            (element.localName != 'span' ||
+                RegExp(r'white-space\s*:\s*pre|display\s*:\s*block')
+                    .hasMatch(element.attributes['style'] ?? '')))) {
       final delta = _inline([child]);
       if (delta.isNotEmpty) result.add(paragraphNode(delta: delta));
     } else {
@@ -172,10 +190,83 @@ List<Node> _blocks(Iterable<dom.Node> source) {
   return result;
 }
 
+bool _isCodeContainer(dom.Element element) {
+  final tag = element.localName;
+  final style = (element.attributes['style'] ?? '').toLowerCase();
+  if (tag == 'pre') return true;
+  if (tag == 'code' &&
+      (RegExp(r'display\s*:\s*block').hasMatch(style) ||
+          element.nodes.any(
+              (n) => n is dom.Element && _blockTags.contains(n.localName)) ||
+          element.parent?.localName == 'body')) {
+    return true;
+  }
+  if (RegExp(r'white-space\s*:\s*pre(?:-wrap)?(?:\s*[;!]|\s*$)')
+      .hasMatch(style)) {
+    return true;
+  }
+  if (RegExp(
+          r'font-family\s*:[^;]*(?:monospace|menlo|monaco|consolas|courier|sf\s?mono|jetbrains\s?mono|fira\s?code)')
+      .hasMatch(style)) {
+    return true;
+  }
+  // GitHub and highlight.js line-number tables do not always carry styles.
+  return tag == 'table' &&
+      element.querySelector('.blob-code, .hljs-ln-code') != null;
+}
+
+String _codeLanguage(dom.Element element) {
+  for (final candidate in [element, ...element.querySelectorAll('*')]) {
+    final data = candidate.attributes['data-language'];
+    if (data != null && data.trim().isNotEmpty) {
+      return normalizeCodeLanguage(data);
+    }
+    final match = RegExp(r'(?:language|lang)-([\w+#.-]+)')
+        .firstMatch(candidate.className);
+    if (match != null) return normalizeCodeLanguage(match.group(1)!);
+    if (candidate.classes.contains('hljs')) {
+      for (final cls in candidate.classes) {
+        final lang = normalizeCodeLanguage(cls);
+        if (commonCodeLanguages.contains(lang)) return lang;
+      }
+    }
+  }
+  return '';
+}
+
+bool _lineNumber(dom.Element element) =>
+    element.attributes['data-chai-line-number'] == 'true' ||
+    ((element.attributes.containsKey('data-line-number') ||
+            RegExp(r'user-select\s*:\s*none')
+                .hasMatch(element.attributes['style'] ?? '')) &&
+        RegExp(r'^\s*\d+\s*$').hasMatch(element.text)) ||
+    element.classes.any((cls) => RegExp(
+            r'^(?:line-numbers?(?:-rows)?|linenos?|gutter|blob-num|hljs-ln-numbers|linenumber)$',
+            caseSensitive: false)
+        .hasMatch(cls));
+
 String _preText(dom.Node node) {
   if (node is dom.Text) return node.text;
-  if (node is dom.Element && node.localName == 'br') return '\n';
-  return node.nodes.map(_preText).join();
+  if (node is! dom.Element) return node.nodes.map(_preText).join();
+  if (_lineNumber(node)) return '';
+  if (node.localName == 'br') return '\n';
+  final out = StringBuffer();
+  var previousWasBlock = false;
+  for (final child in node.nodes) {
+    if (child is dom.Element && _lineNumber(child)) continue;
+    final block = child is dom.Element &&
+        const {'div', 'p', 'tr', 'li'}.contains(child.localName);
+    final value = _preText(child);
+    if ((block || previousWasBlock) &&
+        out.isNotEmpty &&
+        !out.toString().endsWith('\n')) {
+      out.write('\n');
+    }
+    out.write(value);
+    if (block && value.isEmpty) out.write('\n');
+    previousWasBlock = block;
+  }
+  return out.toString();
 }
 
 Delta _inline(Iterable<dom.Node> nodes) {
@@ -208,7 +299,7 @@ Delta _inline(Iterable<dom.Node> nodes) {
       ...inherited,
       if (tag == 'b' ||
           tag == 'strong' ||
-          tag == 'th' ||
+          (tag == 'th' && weight != 'normal' && weight != '400') ||
           weight == 'bold' ||
           (int.tryParse(weight ?? '') ?? 0) >= 600)
         AppFlowyRichTextKeys.bold: true,
@@ -216,7 +307,7 @@ Delta _inline(Iterable<dom.Node> nodes) {
         AppFlowyRichTextKeys.italic: true,
       if (tag == 'code' ||
           tag == 'tt' ||
-          RegExp(r'monospace|menlo|monaco|courier|consolas')
+          RegExp(r'monospace|menlo|monaco|courier|consolas|sf\s?mono|jetbrains\s?mono|fira\s?code')
               .hasMatch(style['font-family'] ?? ''))
         AppFlowyRichTextKeys.code: true,
       if (tag == 'u' || (style['text-decoration'] ?? '').contains('underline'))

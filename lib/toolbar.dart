@@ -426,6 +426,8 @@ class EditorToolbar extends StatelessWidget {
                 onImport?.call();
               case 'saveAs':
                 onSaveAs();
+              case 'pasteCode':
+                pasteAsCodeBlockCommand.handler(_state);
               case 'pasteMarkdown':
                 pasteAsMarkdownCommand.handler(_state);
               case 'pastePlain':
@@ -455,6 +457,10 @@ class EditorToolbar extends StatelessWidget {
                 value: 'pastePlain',
                 height: 34,
                 child: Text('Paste as plain text    ⌘⇧V')),
+            PopupMenuItem(
+                value: 'pasteCode',
+                height: 34,
+                child: Text('Paste as Code Block    ⌘⌥V')),
             PopupMenuDivider(),
             PopupMenuItem(value: 'code', height: 34, child: Text('Code block')),
             PopupMenuItem(value: 'table', height: 34, child: Text('Table')),

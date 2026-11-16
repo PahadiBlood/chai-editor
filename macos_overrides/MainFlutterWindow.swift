@@ -19,6 +19,21 @@ class MainFlutterWindow: NSWindow {
       switch call.method {
       case "getHtml":
         result(NSPasteboard.general.string(forType: .html))
+      case "setClipboard":
+        guard let args = call.arguments as? [String: Any],
+              let text = args["text"] as? String,
+              let html = args["html"] as? String else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected text and html", details: nil))
+          return
+        }
+        let item = NSPasteboardItem()
+        guard item.setString(text, forType: .string),
+              item.setString(html, forType: .html) else {
+          result(FlutterError(code: "clipboard_write_failed", message: "Could not prepare clipboard", details: nil))
+          return
+        }
+        NSPasteboard.general.clearContents()
+        result(NSPasteboard.general.writeObjects([item]))
       default:
         result(FlutterMethodNotImplemented)
       }

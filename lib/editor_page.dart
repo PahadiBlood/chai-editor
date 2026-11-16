@@ -25,6 +25,7 @@ import 'actions.dart';
 import 'code_block.dart';
 import 'doc_tab.dart';
 import 'paste.dart';
+import 'clipboard_writer.dart';
 import 'theme.dart';
 import 'toolbar.dart';
 
@@ -257,7 +258,10 @@ class _EditorPageState extends State<EditorPage>
   late final List<CommandShortcutEvent> _commandShortcuts = [
     ...standardCommandShortcutEvents
         .where(
-          (event) => !enableRichPaste || event != pasteCommand,
+          (event) =>
+              (!enableRichPaste || event != pasteCommand) &&
+              (!enableRichCopy ||
+                  (event != copyCommand && event != cutCommand)),
         )
         .map((event) =>
             enableRichPaste && event == pasteTextWithoutFormattingCommand
@@ -265,6 +269,8 @@ class _EditorPageState extends State<EditorPage>
                 : event),
     if (enableRichPaste) richPasteCommand,
     pasteAsMarkdownCommand,
+    pasteAsCodeBlockCommand,
+    if (enableRichCopy) ...[richCopyCommand, richCutCommand],
   ];
 
   late final List<CharacterShortcutEvent> _characterShortcuts = [

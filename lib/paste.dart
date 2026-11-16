@@ -12,7 +12,7 @@ const enableRichPaste =
     bool.fromEnvironment('CHAI_RICH_PASTE', defaultValue: true);
 const _clipboard = MethodChannel('chai/clipboard');
 
-enum PasteMode { automatic, markdown, plainText }
+enum PasteMode { automatic, markdown, plainText, codeBlock }
 
 /// Only block syntax triggers automatic Markdown. Inline emphasis stays literal.
 bool hasBlockMarkdown(String text) => RegExp(
@@ -34,6 +34,14 @@ final pasteAsMarkdownCommand = CommandShortcutEvent(
   command: 'ctrl+alt+shift+v',
   macOSCommand: 'cmd+alt+shift+v',
   handler: (state) => _startPaste(state, PasteMode.markdown),
+);
+
+final pasteAsCodeBlockCommand = CommandShortcutEvent(
+  key: 'paste as code block',
+  getDescription: () => 'Paste as Code Block',
+  command: 'ctrl+alt+v',
+  macOSCommand: 'cmd+alt+v',
+  handler: (state) => _startPaste(state, PasteMode.codeBlock),
 );
 
 final chaiPastePlainTextCommand = pasteTextWithoutFormattingCommand.copyWith(
@@ -89,7 +97,12 @@ Future<void> pasteContent(
   final inCode =
       state.getNodeAtPath(selection.start.path)?.type == CodeBlockKeys.type;
   List<Node>? nodes;
-  if (!inCode && mode != PasteMode.plainText) {
+  if (!inCode &&
+      mode == PasteMode.codeBlock &&
+      text != null &&
+      text.isNotEmpty) {
+    nodes = [codeBlockNode(text: text)];
+  } else if (!inCode && mode != PasteMode.plainText) {
     if (mode == PasteMode.automatic && html != null && html.trim().isNotEmpty) {
       try {
         nodes = clipboardHtmlToDocument(html).root.children.toList();

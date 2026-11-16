@@ -30,6 +30,72 @@ class AppColors {
 const String serifFont = 'Georgia';
 const String monoFont = 'Menlo';
 
+/// The only chromatic UI colours belong to code tokens. Printing uses the same
+/// token categories on paper; inline code continues to use AppColors.inlineCode.
+class CodeSyntaxColors {
+  const CodeSyntaxColors(
+      {required this.keyword,
+      required this.string,
+      required this.number,
+      required this.comment,
+      required this.function,
+      required this.type,
+      required this.tag,
+      required this.attribute,
+      required this.variable,
+      required this.plain});
+
+  final Color keyword,
+      string,
+      number,
+      comment,
+      function,
+      type,
+      tag,
+      attribute,
+      variable,
+      plain;
+
+  static const dark = CodeSyntaxColors(
+      keyword: Color(0xFFFF7B72),
+      string: Color(0xFFA5D6FF),
+      number: Color(0xFF79C0FF),
+      comment: Color(0xFF8B949E),
+      function: Color(0xFFD2A8FF),
+      type: Color(0xFFFFA657),
+      tag: Color(0xFF7EE787),
+      attribute: Color(0xFF79C0FF),
+      variable: Color(0xFFFFA657),
+      plain: AppColors.codeText);
+  static const light = CodeSyntaxColors(
+      keyword: Color(0xFFCF222E),
+      string: Color(0xFF0A3069),
+      number: Color(0xFF0550AE),
+      comment: Color(0xFF6E7781),
+      function: Color(0xFF8250DF),
+      type: Color(0xFF953800),
+      tag: Color(0xFF116329),
+      attribute: Color(0xFF0550AE),
+      variable: Color(0xFF953800),
+      plain: Color(0xFF1F2328));
+
+  Color forScope(String scope) {
+    final parts = scope.split(RegExp(r'[. ]'));
+    if (parts.contains('comment') || parts.contains('doctag')) return comment;
+    if (parts.contains('keyword')) return keyword;
+    if (parts.contains('string') || parts.contains('regexp')) return string;
+    if (parts.contains('number') || parts.contains('literal')) return number;
+    if (parts.contains('class') || parts.contains('type')) return type;
+    if (parts.contains('title') || parts.contains('function')) return function;
+    if (parts.contains('attr') || parts.contains('attribute')) return attribute;
+    if (parts.contains('tag') || parts.contains('name')) return tag;
+    if (parts.contains('variable') || parts.contains('built_in')) {
+      return variable;
+    }
+    return plain;
+  }
+}
+
 ThemeData buildTheme() {
   final base = ThemeData.dark(useMaterial3: true);
   return base.copyWith(
@@ -140,7 +206,8 @@ Map<String, BlockComponentBuilder> buildBlockBuilders() {
   };
 }
 
-const kMonochromeEditorMenus = bool.fromEnvironment('CHAI_MONOCHROME_MENUS', defaultValue: true);
+const kMonochromeEditorMenus =
+    bool.fromEnvironment('CHAI_MONOCHROME_MENUS', defaultValue: true);
 const monochromeSelectionMenu = SelectionMenuStyle(
   selectionMenuBackgroundColor: AppColors.sidebar,
   selectionMenuItemTextColor: AppColors.text,
@@ -162,3 +229,8 @@ const monochromeFloatingToolbar = FloatingToolbarStyle(
   toolbarActiveColor: AppColors.white,
   backgroundColor: AppColors.sidebar,
 );
+
+String syntaxColorHex(Color color) => (color.toARGB32() & 0xFFFFFF)
+    .toRadixString(16)
+    .padLeft(6, '0')
+    .toUpperCase();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,8 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:provider/provider.dart';
 
 import 'theme.dart';
+import 'code_syntax.dart';
+import 'clipboard_writer.dart';
 
 /// appflowy_editor has no code block, so this file adds one:
 ///  - the block itself (CodeBlockComponentBuilder)
@@ -20,30 +24,14 @@ class CodeBlockKeys {
   static const String language = 'language';
 }
 
-const List<String> codeLanguages = [
-  '',
-  'bash',
-  'dart',
-  'java',
-  'javascript',
-  'typescript',
-  'python',
-  'json',
-  'yaml',
-  'xml',
-  'html',
-  'css',
-  'sql',
-  'properties',
-  'markdown',
-];
+const List<String> codeLanguages = ['', ...commonCodeLanguages];
 
 Node codeBlockNode({String text = '', String language = ''}) {
   return Node(
     type: CodeBlockKeys.type,
     attributes: {
       CodeBlockKeys.delta: (Delta()..insert(text)).toJson(),
-      CodeBlockKeys.language: language,
+      CodeBlockKeys.language: normalizeCodeLanguage(language),
     },
   );
 }
@@ -128,11 +116,62 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
   String get _language =>
       (widget.node.attributes[CodeBlockKeys.language] as String?) ?? '';
 
+  Timer? _highlightDebounce;
+  late HighlightedCode _highlighted;
+  (String, String)? _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    _highlighted = CodeHighlighter.shared
+        .highlight(node.delta?.toPlainText() ?? '', _language);
+    _pending = (_highlighted.text, normalizeCodeLanguage(_language));
+  }
+
+  @override
+  void dispose() {
+    _highlightDebounce?.cancel();
+    super.dispose();
+  }
+
+  TextSpan _decorateCode(TextSpan original) {
+    final text = node.delta?.toPlainText() ?? '';
+    final language = normalizeCodeLanguage(_language);
+    // appflowy also decorates individual delta leaves. Only reconstruct the
+    // complete span; a partial leaf must never duplicate the whole block.
+    if (original.toPlainText() != text) {
+      return original.updateTextStyle(_codeStyle);
+    }
+    final key = (text, language);
+    if (_pending != key) {
+      _pending = key;
+      _highlightDebounce?.cancel();
+      _highlightDebounce = Timer(const Duration(milliseconds: 150), () {
+        if (!mounted) return;
+        setState(() {
+          _highlighted = CodeHighlighter.shared.highlight(text, language);
+        });
+      });
+    }
+    if (_highlighted.text != text) {
+      // Keep fresh characters at their correct offsets while awaiting tokens.
+      return TextSpan(text: text, style: _codeStyle);
+    }
+    return _highlighted.toTextSpan(_codeStyle);
+  }
+
   Future<void> _setLanguage(String language) async {
     final transaction = editorState.transaction
       ..updateNode(widget.node, {CodeBlockKeys.language: language});
     await editorState.apply(transaction);
-    if (mounted) setState(() {});
+    _highlightDebounce?.cancel();
+    _pending = null;
+    if (mounted) {
+      setState(() {
+        _highlighted = CodeHighlighter.shared
+            .highlight(node.delta?.toPlainText() ?? '', language);
+      });
+    }
   }
 
   @override
@@ -155,10 +194,20 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
         children: [
           _LanguageMenu(
             language: _language,
+            detectedLanguage: _highlighted.text == node.delta?.toPlainText()
+                ? _highlighted.detectedLanguage
+                : null,
             onSelected: _setLanguage,
-            onCopy: () => Clipboard.setData(
-              ClipboardData(text: widget.node.delta?.toPlainText() ?? ''),
-            ),
+            onCopy: () => unawaited((enableRichCopy
+                    ? writeDocumentClipboard(Document(
+                        root: Node(type: 'page', children: [node.copyWith()]),
+                      ))
+                    : Clipboard.setData(
+                        ClipboardData(text: node.delta?.toPlainText() ?? '')))
+                .catchError((Object error, StackTrace stack) {
+              FlutterError.reportError(FlutterErrorDetails(
+                  exception: error, stack: stack, library: 'Chai code copy'));
+            })),
           ),
           const SizedBox(height: 4),
           AppFlowyRichText(
@@ -167,9 +216,7 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
             node: widget.node,
             editorState: editorState,
             placeholderText: ' ',
-            textSpanDecorator: (textSpan) => textSpan.updateTextStyle(
-              _codeStyle,
-            ),
+            textSpanDecorator: _decorateCode,
             placeholderTextSpanDecorator: (textSpan) =>
                 textSpan.updateTextStyle(_codeStyle),
             textDirection: textDirection,
@@ -217,9 +264,11 @@ class _LanguageMenu extends StatelessWidget {
     required this.language,
     required this.onSelected,
     required this.onCopy,
+    this.detectedLanguage,
   });
 
   final String language;
+  final String? detectedLanguage;
   final ValueChanged<String> onSelected;
   final VoidCallback onCopy;
 
@@ -248,7 +297,13 @@ class _LanguageMenu extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(language.isEmpty ? 'auto' : language, style: labelStyle),
+              Text(
+                  normalizeCodeLanguage(language).isEmpty
+                      ? (detectedLanguage == null
+                          ? 'auto'
+                          : 'auto: $detectedLanguage')
+                      : language,
+                  style: labelStyle),
               const Icon(
                 Icons.arrow_drop_down,
                 size: 16,
@@ -294,7 +349,9 @@ class MarkdownCodeBlockParser extends CustomMarkdownParser {
     var text = element.textContent;
 
     final children = element.children;
-    if (children != null && children.isNotEmpty && children.first is md.Element) {
+    if (children != null &&
+        children.isNotEmpty &&
+        children.first is md.Element) {
       final code = children.first as md.Element;
       final cls = code.attributes['class'] ?? '';
       if (cls.startsWith('language-')) {

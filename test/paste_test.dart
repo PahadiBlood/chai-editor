@@ -96,7 +96,7 @@ void main() {
     expect(nodes[4].attributes[TodoListBlockKeys.checked], true);
     expect(nodes[5].attributes[TodoListBlockKeys.checked], false);
     expect(nodes[7].attributes[CodeBlockKeys.language], 'dart');
-    expect(nodes[7].delta!.toPlainText(), '  if (a < b) {\n    run();\n  }');
+    expect(nodes[7].delta!.toPlainText(), '  if (a < b) {\n    run();\n  }\n');
     final table = TableNode(node: nodes[8]);
     expect(table.getCell(0, 1).children.single.delta!.toPlainText(), 'one');
     expect(table.getCell(1, 0).children.single.delta!.toPlainText(), 'B');
