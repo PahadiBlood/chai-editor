@@ -1,105 +1,189 @@
-# Chai Editor (macOS)
+<p align="center">
+  <img src="assets/branding/chai-logo.png" width="128" alt="Chai Editor logo">
+</p>
 
-A document editor in Flutter for macOS. It opens, edits and saves Markdown
-files, in a dark layout with a toolbar across the top.
+# Chai Editor
 
-## Run it
+**A clean UI editor for Markdown documents on macOS.**
 
-You need Flutter 3.32 or newer and Xcode (for the macOS build).
+Chai Editor primarily focuses on a clean, distraction-free editing experience:
+a dark workspace, readable typography, a compact formatting toolbar, and documents
+in tabs. Open a Markdown file, edit it visually, and save it back as Markdown.
+
+This repository contains the source code. Follow the steps below to download,
+build, and launch the app on your Mac; a prebuilt installer is not included.
+
+## 1. Install Flutter and the macOS build tools
+
+You need macOS 12 or newer, Git, Flutter, full Xcode, and CocoaPods. The project
+requires Flutter 3.32 or newer; the app has been checked with Flutter 3.47.8.
+Android Studio and Android/iOS SDK setup are not needed for this macOS-only app.
+
+If Git is missing, install Apple's command-line tools first and wait for the
+installation to finish:
 
 ```bash
-cd chai_editor
+xcode-select --install
+```
+
+Download the tested Flutter 3.47.8 SDK into your home directory. Skip the clone if you
+already have Flutter installed:
+
+```bash
+mkdir -p "$HOME/develop"
+git clone https://github.com/flutter/flutter.git --branch 3.47.8 --depth 1 "$HOME/develop/flutter"
+export PATH="$HOME/develop/flutter/bin:$PATH"
+flutter --version
+```
+
+To keep Flutter available in new Terminal windows using macOS's default zsh:
+
+```bash
+echo 'export PATH="$HOME/develop/flutter/bin:$PATH"' >> "$HOME/.zprofile"
+source "$HOME/.zprofile"
+```
+
+Install **Xcode** from the [Mac App Store](https://apps.apple.com/app/xcode/id497799835),
+open it once, and finish its requested component installation. Then configure
+its command-line tools:
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+sudo xcodebuild -license
+```
+
+Install CocoaPods. If you use [Homebrew](https://brew.sh/):
+
+```bash
+brew install cocoapods
+```
+
+Otherwise, use the [CocoaPods installation guide](https://guides.cocoapods.org/using/getting-started.html#installation).
+Validate the macOS toolchain:
+
+```bash
+flutter config --enable-macos-desktop
+flutter doctor -v
+flutter devices
+```
+
+Resolve any issues in the **Flutter** and **Xcode** sections. `flutter devices`
+should list **macOS**. Warnings about Android tooling do not prevent this app
+from building for macOS.
+
+Official references: [Flutter installation](https://docs.flutter.dev/install/manual)
+and [macOS development setup](https://docs.flutter.dev/platform-integration/macos/setup).
+
+## 2. Download Chai Editor
+
+```bash
+git clone https://github.com/PahadiBlood/chai-editor.git
+cd chai-editor
 ./setup.sh
-flutter run -d macos
 ```
 
-`setup.sh` prepares the native runner and can be rerun after updates:
+The setup script downloads Dart dependencies, installs the native HTML clipboard
+bridge and file-access permissions, and selects the Chai logo. It can be rerun
+after updates. Keep `third_party/appflowy_editor` in the checkout: this is the
+pinned **6.1.0** editor with the project's documented compatibility patches.
 
-1. Creates the `macos/` runner with `flutter create --platforms=macos`.
-2. Copies in the two `.entitlements` files from `macos_overrides/`. Without
-   them macOS blocks opening and saving files.
-3. Installs the native HTML clipboard bridge and Chai app icon, retaining the
-   original Flutter icon (`CHAI_USE_CUSTOM_ICON=0 ./setup.sh` selects it).
-4. Runs `flutter pub get`.
+## 3. Launch during development
 
-If you prefer to do it by hand:
+From the downloaded `chai-editor` folder:
 
 ```bash
-flutter create --platforms=macos --project-name chai_editor --org in.chaisociety .
-rm -f test/widget_test.dart
-cp macos_overrides/*.entitlements macos/Runner/
-cp macos_overrides/MainFlutterWindow.swift macos/Runner/
-flutter pub get
 flutter run -d macos
 ```
 
-To try it, press `⌘O` and open `samples/kafka-minimum-setup.md`.
+The window and application name are **Chai Editor**. The internal Dart package
+name remains `chai_editor`.
 
-After updating the clipboard bridge, fully restart the app; hot reload does not
-reload Swift code. Clipboard behavior and the live-source verification checklist
-are documented in [docs/paste-verification.md](docs/paste-verification.md).
-The logo source and PNG are in [assets/branding](assets/branding/README.md).
+Press **⌘O** to open a `.md`, `.markdown`, or `.txt` file. Try
+[`samples/kafka-minimum-setup.md`](samples/kafka-minimum-setup.md).
+Edit visually, then press **⌘S** to save or **⇧⌘S** to save as a new file.
 
-## What it does
+## 4. Build a standalone app
 
-| Area | Features |
-|---|---|
-| Documents | Open `.md`, `.markdown`, `.txt`. Save, Save as. Several documents in tabs. A dot marks unsaved changes. |
-| Text | Bold, italic, underline, strikethrough, inline code, links (`⌘K`), text and highlight colour. |
-| Blocks | Paragraph, Heading 1 to 3, bulleted list, numbered list, checklist, quote, code block, table, image, divider. |
-| Code blocks | Monospaced, language label, copy button. Enter adds a line, Enter on an empty last line leaves the block. |
-| Menus | Toolbar buttons, a bubble toolbar on selected text, and a `/` menu in the document. |
-| Mode | Editing or Viewing (read only), from the menu at the top right. |
-| Paste | Cmd+V preserves HTML formatting and detects block Markdown. Explicit Markdown and plain-text paste are in the **+** menu. All modes paste raw text in code blocks. |
+Build the release app to run it without a development terminal:
 
-## Shortcuts
-
-| Keys | Action |
-|---|---|
-| `⌘O` | Open |
-| `⌘S` | Save |
-| `⇧⌘S` | Save as |
-| `⌘N` | New tab |
-| `⌘B` `⌘I` `⌘U` | Bold, italic, underline |
-| `⌘K` | Add a link |
-| `⌘V` | Paste HTML, Markdown, or plain text |
-| `⌘⇧V` | Paste as plain text |
-| `⌘⌥⇧V` | Paste as Markdown |
-| `/` | Open the block menu |
-| `⌘Z` `⇧⌘Z` | Undo, redo |
-
-## Files
-
-```
-lib/main.dart          App, dark theme, localisation
-lib/editor_page.dart   Tabs, open and save, the editor itself
-lib/toolbar.dart       The top toolbar
-lib/actions.dart       Bold, headings, lists, tables, images ...
-lib/code_block.dart    Code block (the editor package has none)
-lib/markdown_io.dart   Markdown in and out
-lib/doc_tab.dart       One open document
-lib/theme.dart         Colours, fonts, heading sizes
-macos_overrides/       Permissions for opening and saving files
-samples/               A document to open
-test/                  Markdown round-trip tests: flutter test
+```bash
+flutter build macos --release
+open "build/macos/Build/Products/Release/Chai Editor.app"
 ```
 
-## Good to know
+The output is **Chai Editor.app**, with the custom document-and-chai logo.
+For Flutter's native build details, see
+[Building macOS apps](https://docs.flutter.dev/platform-integration/macos/building).
 
-- **Built on `appflowy_editor` 6.1.0**, kept in `third_party/appflowy_editor`
-  with a Flutter text-input compatibility fix documented in
-  `third_party/appflowy_editor/PATCHES.md`. It is dual licensed (AGPL-3.0 and MPL-2.0).
-  You may use it under MPL-2.0, which allows closed-source apps, but you must
-  keep its licence notices and share changes to its own files.
-- **Images** are stored in the Markdown as the full path on your Mac, so a
-  document with local images works only on that machine.
-- **No syntax colouring** in code blocks yet.
-- **Saving rewrites the Markdown** in a tidy form: blank line between blocks,
-  `-` for bullets. Round-trip tests are in `test/`.
-- If CocoaPods complains about the macOS version, open `macos/Podfile` and set
-  `platform :osx, '12.0'` (the generated runner's minimum).
-- If `flutter run -d macos` reports no macOS desktop project, run `./setup.sh`
-  to generate the runner and install its file-access permissions.
-- If the shell reports `getcwd: Operation not permitted`, leave and re-enter
-  the project directory (`cd ..` then `cd chai_editor`), as in the reported
-  recovery, before retrying Flutter.
+To keep your locally built app in your user's Applications folder, first save
+and quit any running copy, then run:
+
+```bash
+mkdir -p "$HOME/Applications"
+ditto "build/macos/Build/Products/Release/Chai Editor.app" "$HOME/Applications/Chai Editor.app"
+open "$HOME/Applications/Chai Editor.app"
+```
+
+You can then launch **Chai Editor** from Finder, Spotlight, or the Dock.
+These commands build and install on your own Mac; they do not create a notarized
+installer for distribution to other users.
+
+## Editing features
+
+- Clean dark interface with document tabs, serif headings, and a compact toolbar.
+- Bold, italic, underline, strikethrough, inline code, links, and text/highlight colours.
+- Headings, lists, checklists, quotes, language-labelled code blocks, tables, images, and dividers.
+- Rich HTML paste, automatic block Markdown detection, and explicit paste modes.
+- Editing and read-only viewing modes, undo/redo, and unsaved-change indicators.
+
+| Shortcut | Action |
+|---|---|
+| ⌘N | New document tab |
+| ⌘O | Open a file |
+| ⌘S / ⇧⌘S | Save / Save as |
+| ⌘B / ⌘I / ⌘U | Bold / Italic / Underline |
+| ⌘K | Add a link |
+| ⌘V | Paste HTML, Markdown, or plain text |
+| ⌘⇧V | Paste as plain text |
+| ⌘⌥⇧V | Paste as Markdown |
+| ⌘Z / ⇧⌘Z | Undo / Redo |
+| / | Open the block menu |
+
+Both explicit paste modes are also available in the toolbar's **+** menu.
+Pasting inside a code block always inserts raw text.
+
+## Update and check the project
+
+From your checkout, with local changes committed or saved:
+
+```bash
+git pull --ff-only
+./setup.sh
+flutter analyze
+flutter test
+flutter build macos --release
+```
+
+Quit the old app and reopen the new build. If you installed a copy in
+`~/Applications`, repeat the `ditto` command above after quitting that copy.
+
+## Troubleshooting and details
+
+- **Flutter is not found:** open a new Terminal window or run
+  `source "$HOME/.zprofile"` after configuring PATH.
+- **No macOS desktop project configured:** run `./setup.sh` from the repository root.
+- **Clipboard changes or the new logo do not appear:** fully quit and relaunch
+  the newly built app. Hot reload does not reload Swift code or native assets.
+- **`getcwd: Operation not permitted`:** leave and re-enter the checkout using
+  `cd ..` and `cd chai-editor`, then retry.
+- **Markdown output:** saving normalizes Markdown formatting. Local image paths
+  refer to files on your Mac. Code blocks currently have no syntax colouring.
+
+More information:
+[editor guide](docs/editor-guide.md),
+[clipboard behavior and manual verification](docs/paste-verification.md),
+[logo source](assets/branding/README.md), and
+[editor compatibility patches and upstream attribution](third_party/appflowy_editor/PATCHES.md).
+The upstream editor's [licence notices](third_party/appflowy_editor/LICENSE)
+are included with its source.
