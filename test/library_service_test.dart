@@ -15,6 +15,18 @@ void main() {
   });
   tearDown(() async => directory.delete(recursive: true));
 
+  test('atomic helper creates missing parents before writing metadata or notes', () async {
+    final fresh = await Directory.systemTemp.createTemp('chai-atomic-');
+    try {
+      final library = LibraryService(fresh);
+      await library.writeState({'open': null});
+      expect(await File(library.statePath).exists(), true);
+      await library.initialize();
+      expect((await library.tree()).single.children.single.name, 'Welcome');
+      await library.writeFileAtomic(p.join(fresh.path, 'nested', 'note.md'), 'text');
+      expect(await File(p.join(fresh.path, 'nested', 'note.md')).readAsString(), 'text');
+    } finally { await fresh.delete(recursive: true); }
+  });
   test(
       'first launch creates Notes/Welcome and subsequent launches preserve files',
       () async {

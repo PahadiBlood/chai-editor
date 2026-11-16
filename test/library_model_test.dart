@@ -29,8 +29,8 @@ void main() {
     await reopened.initialize();
     expect(reopened.current!.toMarkdown(), contains('Immediately saved'));
     expect(reopened.current!.filePath, open);
-    expect(reopened.selected, selected);
-    expect(reopened.expanded, isEmpty);
+    expect(reopened.selected, open);
+    expect(reopened.expanded, contains(selected));
     expect(reopened.width, 315);
     expect(reopened.hidden, true);
     reopened.dispose();

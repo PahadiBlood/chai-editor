@@ -67,8 +67,8 @@ class LibraryService {
   }
 
   Future<void> initialize() async {
-    final first = !await File(statePath).exists() &&
-        !await Directory(p.join(root, '.chai')).exists();
+    final marker = p.join(root, '.chai', 'initialized');
+    final first = !await File(marker).exists();
     await Directory(root).create(recursive: true);
     await Directory(p.dirname(statePath)).create(recursive: true);
     await Directory(trashPath).create(recursive: true);
@@ -84,6 +84,7 @@ class LibraryService {
         await purge(entry);
       }
     }
+    await _writeInternal(marker, '1');
   }
 
   Future<List<LibraryEntry>> tree([String? folder]) async {
@@ -146,7 +147,7 @@ class LibraryService {
     if (folder) {
       await Directory(target).create();
     } else {
-      await File(target).writeAsString('');
+      await writeFileAtomic(target, '');
     }
     return target;
   }
@@ -186,14 +187,14 @@ class LibraryService {
     _check(path);
     final target = await _unique(
         p.dirname(path), '${p.basenameWithoutExtension(path)} copy', false);
-    await File(path).copy(target);
+    await writeFileAtomic(target, await File(path).readAsString());
     return target;
   }
 
   Future<String> importNote(String from, String parent) async {
     final target =
         await _unique(parent, p.basenameWithoutExtension(from), false);
-    await File(from).copy(target);
+    await writeFileAtomic(target, await File(from).readAsString());
     return target;
   }
 
@@ -204,10 +205,14 @@ class LibraryService {
 
   Future<void> writeNote(String path, String text) async {
     _check(path);
-    await atomicWrite(path, text);
+    await writeFileAtomic(path, text);
   }
 
-  Future<void> atomicWrite(String path, String text) async {
+  Future<void> atomicWrite(String path, String text) =>
+      writeFileAtomic(path, text);
+
+  Future<void> writeFileAtomic(String path, String text) async {
+    await Directory(p.dirname(path)).create(recursive: true);
     final temporary = File(p.join(p.dirname(path),
         '.${p.basename(path)}.${DateTime.now().microsecondsSinceEpoch}.${_serial++}.tmp'));
     try {
@@ -229,7 +234,22 @@ class LibraryService {
   }
 
   Future<void> writeState(Map<String, dynamic> state) =>
-      atomicWrite(statePath, jsonEncode(state));
+      _writeInternal(statePath, jsonEncode(state));
+
+  Future<void> _writeInternal(String path, String text) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await writeFileAtomic(path, text);
+        return;
+      } catch (error) {
+        stderr.writeln('Chai internal write failed ($path): $error');
+      }
+    }
+    // State is best effort; a failed trash index must stop the destructive move.
+    if (path == p.join(trashPath, 'index.json')) {
+      throw FileSystemException('Could not update trash index', path);
+    }
+  }
 
   Future<List<TrashEntry>> trash() async {
     final index = File(p.join(trashPath, 'index.json'));
@@ -240,7 +260,7 @@ class LibraryService {
         .toList();
   }
 
-  Future<void> _writeTrash(List<TrashEntry> entries) => atomicWrite(
+  Future<void> _writeTrash(List<TrashEntry> entries) => _writeInternal(
       p.join(trashPath, 'index.json'),
       jsonEncode(entries.map((e) => e.toJson()).toList()));
 
