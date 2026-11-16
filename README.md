@@ -187,3 +187,74 @@ More information:
 [editor compatibility patches and upstream attribution](third_party/appflowy_editor/PATCHES.md).
 The upstream editor's [licence notices](third_party/appflowy_editor/LICENSE)
 are included with its source.
+
+## Other platforms: run and build
+
+macOS is the verified platform. Flutter also supports Windows, Android and iOS;
+the commands below generate the additional native runners. These targets are
+not yet verified here. The native HTML clipboard bridge is macOS-specific;
+other targets fall back to plain-text/Markdown clipboard input.
+
+Keep the existing macOS runner; use only the requested platform in `flutter create`.
+Do not run the macOS-only `setup.sh` on Windows.
+
+### Windows (build on Windows)
+
+Install Flutter and Visual Studio with **Desktop development with C++**, then
+run these commands in PowerShell from the checkout:
+
+```powershell
+flutter config --enable-windows-desktop
+flutter create --platforms=windows --project-name chai_editor --org in.chaisociety .
+flutter pub get
+flutter run -d windows
+flutter build windows --release
+```
+
+The executable and its accompanying DLL/data files are under
+`build/windows/x64/runner/Release/`. Keep the entire folder together.
+See [Flutter Windows setup](https://docs.flutter.dev/platform-integration/windows/setup).
+
+### Android
+
+Install the Android SDK and an emulator (or connect a phone with USB debugging).
+Run `flutter doctor --android-licenses` and resolve Android toolchain issues.
+
+```bash
+flutter create --platforms=android --project-name chai_editor --org in.chaisociety .
+flutter pub get
+flutter devices
+flutter run -d <android-device-id>
+flutter build apk --release
+flutter build appbundle --release
+```
+
+The APK is `build/app/outputs/flutter-apk/app-release.apk`; the bundle is
+`build/app/outputs/bundle/release/app-release.aab`. Configure your own release
+signing before distributing through Google Play. See
+[Flutter Android builds](https://docs.flutter.dev/deployment/android).
+
+### iOS (build on a Mac)
+
+Install Xcode and CocoaPods, then use a simulator or a provisioned iPhone:
+
+```bash
+flutter create --platforms=ios --project-name chai_editor --org in.chaisociety .
+flutter pub get
+flutter devices
+flutter run -d <ios-device-id>
+flutter build ios --release --no-codesign
+```
+
+The unsigned build is under `build/ios/iphoneos/`. To install on a real iPhone or
+publish, open `ios/Runner.xcworkspace`, configure a signing team and bundle ID,
+then use `flutter build ipa --release` with your provisioning set up. See
+[Flutter iOS builds](https://docs.flutter.dev/deployment/ios).
+
+## Free use and commercial reuse
+
+Original Chai Editor code and artwork are released under the [Unlicense](LICENSE).
+Everyone may use, copy, modify, redistribute, or sell them, including commercially,
+without paying the author or asking permission. No warranty is provided.
+This dedication does not remove the existing terms of dependencies; see
+[third-party notices](THIRD_PARTY_NOTICES.md).
