@@ -25,6 +25,7 @@ cp macos_overrides/DebugProfile.entitlements macos/Runner/DebugProfile.entitleme
 cp macos_overrides/Release.entitlements macos/Runner/Release.entitlements
 cp macos_overrides/MainFlutterWindow.swift macos/Runner/MainFlutterWindow.swift
 cp macos_overrides/AppDelegate.swift macos/Runner/AppDelegate.swift
+cp macos_overrides/AppInfo.xcconfig macos/Runner/Configs/AppInfo.xcconfig
 
 # Keep the original Flutter icon available: CHAI_USE_CUSTOM_ICON=0 ./setup.sh
 cp -R assets/branding/ChaiIcon.appiconset macos/Runner/Assets.xcassets/
