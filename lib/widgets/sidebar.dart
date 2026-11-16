@@ -290,6 +290,17 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                   height: 52,
                   child:
                       Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    const Expanded(
+                        child: Padding(
+                      padding: EdgeInsets.only(left: 18),
+                      child: Text('Chai Editor',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: AppColors.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                    )),
                     _createMenu(model, model.destination),
                     IconButton(
                         tooltip: 'Hide sidebar',
