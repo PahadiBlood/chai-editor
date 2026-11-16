@@ -7,11 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> finishIO(WidgetTester tester, bool Function() ready) async {
-  for (var i = 0; i < 100 && !ready(); i++) {
+  // Real filesystem work competes with the rest of the suite. Wait for actual
+  // readiness before settling; a loading spinner cannot settle under fake time.
+  final elapsed = Stopwatch()..start();
+  while (!ready() && elapsed.elapsed < const Duration(seconds: 10)) {
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
     await tester.pump();
   }
+  expect(ready(), isTrue, reason: 'Storage setup must finish before settling');
   await tester.pumpAndSettle();
 }
 
