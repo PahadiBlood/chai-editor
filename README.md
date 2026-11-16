@@ -8,7 +8,8 @@
 
 Chai Editor primarily focuses on a clean, distraction-free editing experience:
 a dark workspace, readable typography, a compact formatting toolbar, and documents
-in tabs. Open a Markdown file, edit it visually, and save it back as Markdown.
+in a persistent folder-and-note sidebar. Open a Markdown file, edit it visually,
+and save it back as Markdown.
 
 This repository contains the source code. Follow the steps below to download,
 build, and launch the app on your Mac; a prebuilt installer is not included.
@@ -131,7 +132,7 @@ installer for distribution to other users.
 
 ## Editing features
 
-- Clean dark interface with document tabs, serif headings, and a compact toolbar.
+- Clean dark interface with a folder-and-note tree, serif headings, and a compact toolbar.
 - Bold, italic, underline, strikethrough, inline code, links, and text/highlight colours.
 - Headings, lists, checklists, quotes, language-labelled code blocks, tables, images, and dividers.
 - Rich HTML paste, automatic block Markdown detection, and explicit paste modes.
@@ -139,7 +140,7 @@ installer for distribution to other users.
 
 | Shortcut | Action |
 |---|---|
-| ⌘N | New document tab |
+| ⌘N | New library note |
 | ⌘O | Open a file |
 | ⌘S / ⇧⌘S | Save / Save as |
 | ⌘B / ⌘I / ⌘U | Bold / Italic / Underline |
@@ -258,3 +259,34 @@ Everyone may use, copy, modify, redistribute, or sell them, including commercial
 without paying the author or asking permission. No warranty is provided.
 This dedication does not remove the existing terms of dependencies; see
 [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Your note library
+
+The sidebar stores real folders and `.md` notes under the platform's application
+Documents directory in `ChaiEditor/` (inside the application container on a
+sandboxed Mac). The first launch creates **Notes → Welcome**.
+
+- Notes save automatically 700 ms after editing, on note switches, and before an
+  accepted app exit. There is no Save prompt or unsaved dot for library notes.
+- Create notes and folders using the toolbar, sidebar buttons or context menus.
+  Rename with a slow second click, double-click, Return, or the context menu.
+- Drag items into folders; drop on **On My Mac** to move them to the root.
+- **Recently Deleted** keeps deleted notes/folders for 30 days. Restore them, or
+  permanently delete after confirmation. **Empty** also asks for confirmation.
+- Resize the sidebar between 200–380 px. At widths below 760 px it becomes a
+  drawer, opened with the sidebar button. The formatting toolbar scrolls on
+  narrow screens and editor margins shrink.
+- **⌘⇧N** creates a folder; **⌘⌥S** toggles the sidebar. With sidebar focus,
+  arrows navigate/expand/collapse and **⌘Backspace** moves an item to trash.
+  Use Ctrl instead of Cmd for file/library keyboard shortcuts on Windows.
+- Open and Save As continue to work for external files. **+ → Import Markdown**
+  copies a file into the selected library folder. Save As on a library note
+  exports a copy without changing its library location.
+
+The app remembers the open note, selected row, expanded folders, sidebar width
+and visibility in `.chai/state.json`. Hidden files are excluded from the tree.
+It reloads the tree when activated so external file-manager changes appear.
+
+The former tab dropdown remains available using
+`--dart-define=CHAI_SHOW_TABS=true`; it is hidden by default. The pinned editor
+remains at 6.1.0. See [library verification](docs/library-verification.md).
