@@ -8,6 +8,8 @@ import 'theme.dart';
 
 enum _TabAction { newTab, open, save, saveAs, closeTab }
 
+const kShowTabs = bool.fromEnvironment('CHAI_SHOW_TABS', defaultValue: false);
+
 class EditorToolbar extends StatelessWidget {
   const EditorToolbar({
     super.key,
@@ -22,6 +24,9 @@ class EditorToolbar extends StatelessWidget {
     required this.onCloseTab,
     required this.onPickImage,
     required this.onEditingChanged,
+    this.onToggleSidebar,
+    this.onImport,
+    this.activeTab,
   });
 
   final List<DocTab> tabs;
@@ -35,8 +40,11 @@ class EditorToolbar extends StatelessWidget {
   final VoidCallback onCloseTab;
   final VoidCallback onPickImage;
   final ValueChanged<bool> onEditingChanged;
+  final VoidCallback? onToggleSidebar;
+  final VoidCallback? onImport;
+  final DocTab? activeTab;
 
-  DocTab get _tab => tabs[currentIndex];
+  DocTab get _tab => activeTab ?? tabs[currentIndex];
   EditorState get _state => _tab.editorState;
 
   @override
@@ -57,7 +65,17 @@ class EditorToolbar extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildTabMenu(),
+                    if (onToggleSidebar != null)
+                      IconButton(
+                          tooltip: 'Show sidebar',
+                          icon: const Icon(Icons.view_sidebar_outlined),
+                          onPressed: onToggleSidebar),
+                    if (kShowTabs || onToggleSidebar == null) _buildTabMenu(),
+                    if (!kShowTabs && onToggleSidebar != null)
+                      _ToolButton(
+                          icon: Icons.note_add_outlined,
+                          tooltip: 'New note',
+                          onPressed: onNew),
                     const _Divider(),
                     _buildTextStyleMenu(),
                     _buildInlineButtons(),
@@ -177,7 +195,7 @@ class EditorToolbar extends StatelessWidget {
                   ),
                 ),
               ),
-              if (_tab.dirty)
+              if (_tab.dirty && !_tab.libraryManaged)
                 const Padding(
                   padding: EdgeInsets.only(left: 5),
                   child: Icon(Icons.circle, size: 7, color: AppColors.accent),
@@ -373,6 +391,12 @@ class EditorToolbar extends StatelessWidget {
           enabled: editing,
           onSelected: (value) {
             switch (value) {
+              case 'new':
+                onNew();
+              case 'import':
+                onImport?.call();
+              case 'saveAs':
+                onSaveAs();
               case 'pasteMarkdown':
                 pasteAsMarkdownCommand.handler(_state);
               case 'pastePlain':
@@ -391,6 +415,9 @@ class EditorToolbar extends StatelessWidget {
             }
           },
           itemBuilder: (_) => const [
+            PopupMenuItem(value: 'new', child: Text('New Note')),
+            PopupMenuItem(value: 'import', child: Text('Import Markdown…')),
+            PopupMenuItem(value: 'saveAs', child: Text('Save As…')),
             PopupMenuItem(
                 value: 'pasteMarkdown',
                 height: 34,

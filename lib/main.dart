@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'editor_page.dart';
+import 'library/library_service.dart';
 import 'theme.dart';
 
 void main() {
@@ -10,7 +11,10 @@ void main() {
 }
 
 class ChaiEditorApp extends StatelessWidget {
-  const ChaiEditorApp({super.key});
+  const ChaiEditorApp(
+      {super.key, this.enableLibrary = true, this.libraryService});
+  final bool enableLibrary;
+  final LibraryService? libraryService;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +32,8 @@ class ChaiEditorApp extends StatelessWidget {
         AppFlowyEditorLocalizations.delegate,
       ],
       supportedLocales: AppFlowyEditorLocalizations.delegate.supportedLocales,
-      home: const EditorPage(),
+      home: EditorPage(
+          enableLibrary: enableLibrary, libraryService: libraryService),
     );
   }
 }

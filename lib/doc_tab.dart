@@ -11,14 +11,15 @@ class DocTab {
   DocTab({
     required String markdown,
     this.filePath,
+    this.libraryManaged = false,
     required VoidCallback onChanged,
   }) : editorState = EditorState(document: markdownToEditorDocument(markdown)) {
     scrollController = EditorScrollController(
       editorState: editorState,
       shrinkWrap: false,
     );
-    _subscription = editorState.transactionStream.listen((_) {
-      if (!dirty) {
+    _subscription = editorState.transactionStream.listen((event) {
+      if (event.$1 == TransactionTime.after) {
         dirty = true;
         onChanged();
       }
@@ -31,6 +32,7 @@ class DocTab {
 
   String? filePath;
   bool dirty = false;
+  final bool libraryManaged;
 
   String get title {
     final path = filePath;

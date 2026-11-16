@@ -25,5 +25,8 @@ class MainFlutterWindow: NSWindow {
     }
 
     super.awakeFromNib()
+    titlebarAppearsTransparent = true
+    titleVisibility = .hidden
+    styleMask.insert(.fullSizeContentView)
   }
 }

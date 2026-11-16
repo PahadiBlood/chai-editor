@@ -1,10 +1,18 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
+import 'library/library_model.dart';
+import 'library/library_service.dart';
+import 'widgets/sidebar.dart';
 import 'actions.dart';
 import 'code_block.dart';
 import 'doc_tab.dart';
@@ -15,7 +23,9 @@ import 'toolbar.dart';
 const _markdownExtensions = ['md', 'markdown', 'txt'];
 
 class EditorPage extends StatefulWidget {
-  const EditorPage({super.key});
+  const EditorPage({super.key, this.enableLibrary = true, this.libraryService});
+  final bool enableLibrary;
+  final LibraryService? libraryService;
 
   @override
   State<EditorPage> createState() => _EditorPageState();
@@ -25,6 +35,110 @@ class _EditorPageState extends State<EditorPage> {
   final List<DocTab> _tabs = [];
   int _current = 0;
   bool _editing = true;
+  bool _external = false;
+  LibraryModel? _library;
+  Future<void>? _initialization;
+  AppLifecycleListener? _lifecycle;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  Future<void> _initializeLibrary() async {
+    try {
+      final directory = widget.libraryService == null
+          ? await getApplicationDocumentsDirectory()
+          : null;
+      if (!mounted) return;
+      final model = LibraryModel(widget.libraryService ??
+          LibraryService(Directory(p.join(directory!.path, 'ChaiEditor'))));
+      _library = model;
+      model.addListener(_libraryChanged);
+      await model.initialize();
+      if (!mounted) return;
+      _libraryChanged();
+    } catch (error) {
+      if (mounted) _toast('Could not open note library: $error');
+    }
+  }
+
+  void _libraryChanged() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _library?.collect();
+    });
+  }
+
+  Future<void> _flushLibrary() async {
+    await _initialization;
+    final library = _library;
+    if (library != null) {
+      await library.idle;
+      await library.flush();
+      await library.saveState();
+    }
+  }
+
+  void _saveInBackground() {
+    unawaited(_flushLibrary().catchError((Object error) {
+      if (mounted) {
+        _library?.error = 'Could not save notes: $error';
+        _libraryChanged();
+      }
+    }));
+  }
+
+  Future<void> _newNote({bool folder = false}) async {
+    final library = _library;
+    if (library == null) {
+      _addTab(markdown: '');
+      return;
+    }
+    await library.run(() => library.create(folder: folder));
+    if (mounted) {
+      setState(() => _external = false);
+      if (MediaQuery.sizeOf(context).width < 760) {
+        _scaffoldKey.currentState?.openDrawer();
+      }
+    }
+  }
+
+  Future<void> _openLibrary(String path) async {
+    final library = _library;
+    if (library == null) return;
+    if (_external && _tab.dirty) {
+      final choice = await _askAboutUnsaved(_tab);
+      if (choice == _Unsaved.cancel) return;
+      if (choice == _Unsaved.save && !await _save()) return;
+    }
+    await library.run(() => library.open(path));
+    if (mounted) {
+      setState(() => _external = false);
+      _scaffoldKey.currentState?.closeDrawer();
+    }
+  }
+
+  Future<void> _importNote() async {
+    final library = _library;
+    if (library == null) return;
+    final result = await FilePicker.platform
+        .pickFiles(type: FileType.custom, allowedExtensions: ['md']);
+    final path = result?.files.single.path;
+    if (path != null) {
+      await library.run(() => library.importNote(path));
+      if (mounted) setState(() => _external = false);
+    }
+  }
+
+  void _toggleSidebar() {
+    if (MediaQuery.sizeOf(context).width < 760) {
+      if (_scaffoldKey.currentState?.isDrawerOpen == true) {
+        _scaffoldKey.currentState?.closeDrawer();
+      } else {
+        _scaffoldKey.currentState?.openDrawer();
+      }
+    } else {
+      _library?.toggle();
+    }
+  }
 
   late final EditorStyle _editorStyle = buildEditorStyle();
   late final Map<String, BlockComponentBuilder> _blockBuilders =
@@ -52,16 +166,42 @@ class _EditorPageState extends State<EditorPage> {
     ),
   ];
 
-  DocTab get _tab => _tabs[_current];
+  DocTab get _tab => !_external && _library?.current != null
+      ? _library!.current!
+      : _tabs[_current];
 
   @override
   void initState() {
     super.initState();
     _addTab(markdown: '');
+    if (widget.enableLibrary) {
+      _initialization = _initializeLibrary();
+      _lifecycle = AppLifecycleListener(
+        onInactive: _saveInBackground,
+        onHide: _saveInBackground,
+        onResume: () => _library?.run(() async {
+          await _library?.flush();
+          await _library?.saveState();
+          await _library?.reload();
+        }),
+        onExitRequested: () async {
+          try {
+            await _flushLibrary();
+            return AppExitResponse.exit;
+          } catch (error) {
+            _toast('Could not save notes: $error');
+            return AppExitResponse.cancel;
+          }
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
+    _lifecycle?.dispose();
+    _library?.removeListener(_libraryChanged);
+    _library?.dispose();
     for (final tab in _tabs) {
       tab.dispose();
     }
@@ -160,7 +300,9 @@ class _EditorPageState extends State<EditorPage> {
         return;
       }
 
+      await _library?.flush();
       final text = await File(path).readAsString();
+      _external = true;
       _addTab(markdown: text, filePath: path);
     } catch (e) {
       _toast('Could not open the file: $e');
@@ -170,6 +312,10 @@ class _EditorPageState extends State<EditorPage> {
   Future<bool> _save({bool saveAs = false}) async {
     final tab = _tab;
     try {
+      if (tab.libraryManaged && !saveAs) {
+        await _library?.flush();
+        return true;
+      }
       var path = tab.filePath;
 
       if (path == null || saveAs) {
@@ -189,6 +335,10 @@ class _EditorPageState extends State<EditorPage> {
       }
 
       await File(path).writeAsString(tab.toMarkdown());
+      if (tab.libraryManaged) {
+        _toast('Exported ${p.basename(path)}');
+        return true;
+      }
       setState(() {
         tab.filePath = path;
         tab.dirty = false;
@@ -224,7 +374,7 @@ class _EditorPageState extends State<EditorPage> {
           content: Text(message),
           duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,
-          width: 420,
+          width: MediaQuery.sizeOf(context).width < 480 ? null : 420,
         ),
       );
   }
@@ -235,37 +385,112 @@ class _EditorPageState extends State<EditorPage> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): _save,
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true, shift: true):
-            () => _save(saveAs: true),
-        const SingleActivator(LogicalKeyboardKey.keyO, meta: true): _open,
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
-            _addTab(markdown: ''),
+        SingleActivator(LogicalKeyboardKey.keyS,
+            meta: Platform.isMacOS, control: !Platform.isMacOS): _save,
+        SingleActivator(LogicalKeyboardKey.keyS,
+            meta: Platform.isMacOS,
+            control: !Platform.isMacOS,
+            shift: true): () => _save(saveAs: true),
+        SingleActivator(LogicalKeyboardKey.keyO,
+            meta: Platform.isMacOS, control: !Platform.isMacOS): _open,
+        SingleActivator(LogicalKeyboardKey.keyN,
+            meta: Platform.isMacOS, control: !Platform.isMacOS): _newNote,
+        SingleActivator(LogicalKeyboardKey.keyN,
+            meta: Platform.isMacOS,
+            control: !Platform.isMacOS,
+            shift: true): () => _newNote(folder: true),
+        SingleActivator(LogicalKeyboardKey.keyS,
+            meta: Platform.isMacOS,
+            control: !Platform.isMacOS,
+            alt: true): _toggleSidebar,
       },
       child: Scaffold(
-        body: Column(
-          children: [
-            EditorToolbar(
-              tabs: _tabs,
-              currentIndex: _current,
-              editing: _editing,
-              onSelectTab: (i) => setState(() => _current = i),
-              onNew: () => _addTab(markdown: ''),
-              onOpen: _open,
-              onSave: _save,
-              onSaveAs: () => _save(saveAs: true),
-              onCloseTab: _closeCurrentTab,
-              onPickImage: _pickImage,
-              onEditingChanged: (value) => setState(() => _editing = value),
-            ),
-            Expanded(child: _buildEditor(_tab)),
-          ],
-        ),
+        key: _scaffoldKey,
+        drawer: _library == null || MediaQuery.sizeOf(context).width >= 760
+            ? null
+            : Drawer(width: _library!.width, child: _sidebar()),
+        body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 760;
+          final editor = Column(
+            children: [
+              EditorToolbar(
+                activeTab: _tab,
+                tabs: _tabs,
+                currentIndex: _current,
+                editing: _editing,
+                onSelectTab: (i) => setState(() => _current = i),
+                onNew: _newNote,
+                onToggleSidebar: widget.enableLibrary ? _toggleSidebar : null,
+                onImport: widget.enableLibrary ? _importNote : null,
+                onOpen: _open,
+                onSave: _save,
+                onSaveAs: () => _save(saveAs: true),
+                onCloseTab: _closeCurrentTab,
+                onPickImage: _pickImage,
+                onEditingChanged: (value) => setState(() => _editing = value),
+              ),
+              if (_library?.error != null)
+                MaterialBanner(content: Text(_library!.error!), actions: [
+                  TextButton(
+                      onPressed: () {
+                        _library!.error = null;
+                        setState(() {});
+                      },
+                      child: const Text('Dismiss'))
+                ]),
+              Expanded(
+                  child: _library != null &&
+                          !_external &&
+                          _library!.current == null
+                      ? Center(
+                          child: TextButton.icon(
+                              onPressed: _newNote,
+                              icon: const Icon(Icons.note_add_outlined),
+                              label: const Text('Create a note')))
+                      : _buildEditor(_tab,
+                          compact: constraints.maxWidth -
+                                  (wide && _library?.hidden == false
+                                      ? _library!.width
+                                      : 0) <
+                              600)),
+            ],
+          );
+          if (!wide || _library == null || _library!.hidden) {
+            return Padding(
+                padding: EdgeInsets.only(
+                    top: Platform.isMacOS && widget.enableLibrary ? 52 : 0),
+                child: editor);
+          }
+          return Row(children: [
+            SizedBox(width: _library!.width, child: _sidebar()),
+            MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onHorizontalDragUpdate: (details) =>
+                        _library!.resize(_library!.width + details.delta.dx),
+                    child: const SizedBox(width: 5, height: double.infinity))),
+            Expanded(child: editor)
+          ]);
+        })),
       ),
     );
   }
 
-  Widget _buildEditor(DocTab tab) {
+  Widget _sidebar() => ChangeNotifierProvider.value(
+      value: _library!,
+      child: LibrarySidebar(
+        onOpen: _openLibrary,
+        onHide: () {
+          if (_scaffoldKey.currentState?.isDrawerOpen == true) {
+            _scaffoldKey.currentState?.closeDrawer();
+          } else {
+            _library!.toggle();
+          }
+        },
+      ));
+
+  Widget _buildEditor(DocTab tab, {bool compact = false}) {
     final state = tab.editorState;
     final key = ValueKey('${identityHashCode(tab)}-$_editing');
 
@@ -288,12 +513,12 @@ class _EditorPageState extends State<EditorPage> {
       child: AppFlowyEditor(
         editorState: state,
         editorScrollController: tab.scrollController,
-        editorStyle: _editorStyle,
+        editorStyle: compact ? buildEditorStyle(compact: true) : _editorStyle,
         blockComponentBuilders: _blockBuilders,
         commandShortcutEvents: _commandShortcuts,
         characterShortcutEvents: _characterShortcuts,
         editable: _editing,
-        autoFocus: _editing,
+        autoFocus: _editing && (!widget.enableLibrary || _external),
         header: const SizedBox(height: 40),
         footer: _EndOfDocument(state: state),
       ),

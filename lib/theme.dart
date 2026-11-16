@@ -47,9 +47,9 @@ ThemeData buildTheme() {
   );
 }
 
-EditorStyle buildEditorStyle() {
+EditorStyle buildEditorStyle({bool compact = false}) {
   return EditorStyle.desktop(
-    padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 8),
+    padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 48, vertical: 8),
     maxWidth: 860,
     cursorColor: AppColors.accent,
     selectionColor: AppColors.selection,

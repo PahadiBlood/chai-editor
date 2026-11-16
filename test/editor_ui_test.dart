@@ -11,7 +11,7 @@ void main() {
     AppFlowyClipboard.mockSetData(
         const AppFlowyClipboardData(text: '**bold**'));
     addTearDown(() => AppFlowyClipboard.mockSetData(null));
-    await tester.pumpWidget(const ChaiEditorApp());
+    await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));
     await tester.pumpAndSettle();
     final state =
         tester.widget<AppFlowyEditor>(find.byType(AppFlowyEditor)).editorState;
@@ -44,7 +44,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const ChaiEditorApp());
+    await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byTooltip('Bold  ⌘B'), findsOneWidget);
