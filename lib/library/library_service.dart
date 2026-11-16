@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'atomic_file.dart' as atomic;
 
 class LibraryEntry {
   const LibraryEntry(this.path, this.isFolder, [this.children = const []]);
@@ -211,30 +212,87 @@ class LibraryService {
   Future<void> atomicWrite(String path, String text) =>
       writeFileAtomic(path, text);
 
-  Future<void> writeFileAtomic(String path, String text) async {
-    await Directory(p.dirname(path)).create(recursive: true);
-    final temporary = File(p.join(p.dirname(path),
-        '.${p.basename(path)}.${DateTime.now().microsecondsSinceEpoch}.${_serial++}.tmp'));
+  /// Check actual write access without modifying any existing note or setting.
+  Future<void> verifyWritable() async {
+    final probe = File(p.join(root,
+        '.storage-check-${DateTime.now().microsecondsSinceEpoch}-${_serial++}'));
     try {
-      await temporary.writeAsString(text, flush: true);
-      await temporary.rename(path);
+      await writeFileAtomic(probe.path, '');
     } finally {
-      if (await temporary.exists()) await temporary.delete();
+      if (await probe.exists()) await probe.delete();
     }
   }
 
+  Future<void> writeFileAtomic(String path, String text) =>
+      atomic.writeFileAtomic(path, text);
+
+  // Values in state/trash are portable, slash-separated paths relative to root.
+  String? _encodePath(Object? value) {
+    if (value is! String) return null;
+    final normalized = p.normalize(p.absolute(value));
+    if (normalized != root && !p.isWithin(root, normalized)) return null;
+    return p.relative(normalized, from: root).split(p.separator).join('/');
+  }
+
+  String? _decodePath(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    if (p.isAbsolute(value)) {
+      // Compatibility with earlier installations; never import another user's root.
+      final path = p.normalize(value);
+      return path == root || p.isWithin(root, path) ? path : null;
+    }
+    // Reject drive/UNC paths from a different platform and traversal outside root.
+    if (p.windows.isAbsolute(value) ||
+        value.contains(p.windows.separator) ||
+        RegExp(r'^[A-Za-z]:').hasMatch(value)) {
+      return null;
+    }
+    final path = p.normalize(p.joinAll([root, ...value.split('/')]));
+    if (path != root && !p.isWithin(root, path)) return null;
+    return path;
+  }
+
   Future<Map<String, dynamic>> readState() async {
-    if (!await File(statePath).exists()) return {};
     try {
-      return Map<String, dynamic>.from(
-          jsonDecode(await File(statePath).readAsString()) as Map);
+      final file = File(statePath);
+      if (!await file.exists()) return {};
+      final value = jsonDecode(await file.readAsString());
+      if (value is! Map) return {};
+      final state = Map<String, dynamic>.from(value);
+      final expanded = state['expanded'];
+      final width = state['width'];
+      return {
+        'open': _decodePath(state['open']),
+        'selected': _decodePath(state['selected']),
+        'expanded': expanded is List
+            ? expanded.map(_decodePath).whereType<String>().toList()
+            : <String>[],
+        'width': width is num && width.isFinite ? width.clamp(200, 380) : 260,
+        'hidden': state['hidden'] == true,
+      };
+    } on FileSystemException catch (error) {
+      stderr.writeln(
+          'Chai sidebar state unavailable: ${error.osError?.message ?? 'unavailable'}');
+      return {};
     } on FormatException {
+      stderr.writeln('Chai sidebar state is invalid; using defaults.');
       return {};
     }
   }
 
-  Future<void> writeState(Map<String, dynamic> state) =>
-      _writeInternal(statePath, jsonEncode(state));
+  Future<void> writeState(Map<String, dynamic> state) => _writeInternal(
+      statePath,
+      jsonEncode({
+        'version': 2,
+        'open': _encodePath(state['open']),
+        'selected': _encodePath(state['selected']),
+        'expanded': (state['expanded'] is List ? state['expanded'] as List : [])
+            .map(_encodePath)
+            .whereType<String>()
+            .toList(),
+        'width': state['width'],
+        'hidden': state['hidden'] == true,
+      }));
 
   Future<void> _writeInternal(String path, String text) async {
     for (var attempt = 0; attempt < 2; attempt++) {
@@ -255,14 +313,22 @@ class LibraryService {
     final index = File(p.join(trashPath, 'index.json'));
     if (!await index.exists()) return [];
     final data = jsonDecode(await index.readAsString()) as List;
-    return data
-        .map((e) => TrashEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return data.map((e) {
+      final json = Map<String, dynamic>.from(e as Map);
+      final path = _decodePath(json['path']);
+      if (path == null) {
+        throw const FormatException(
+            'Trash item belongs to an unavailable library');
+      }
+      return TrashEntry.fromJson({...json, 'path': path});
+    }).toList();
   }
 
   Future<void> _writeTrash(List<TrashEntry> entries) => _writeInternal(
       p.join(trashPath, 'index.json'),
-      jsonEncode(entries.map((e) => e.toJson()).toList()));
+      jsonEncode(entries
+          .map((e) => {...e.toJson(), 'path': _encodePath(e.originalPath)})
+          .toList()));
 
   Future<void> delete(String path) async {
     _check(path);
