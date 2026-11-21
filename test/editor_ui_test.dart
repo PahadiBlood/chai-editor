@@ -2,10 +2,44 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor/src/flutter/scrollable_helpers.dart'
     as editor_scroll;
 import 'package:chai_editor/main.dart';
+import 'package:chai_editor/paste.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('document prose is tighter while inline code keeps its spacing',
+      (tester) async {
+    await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));
+    await tester.pumpAndSettle();
+    final editor = find.byType(AppFlowyEditor);
+    final state = tester.widget<AppFlowyEditor>(editor).editorState;
+    state.selection = Selection.collapsed(Position(path: [0]));
+    await tester.runAsync(() => pasteContent(state,
+        text: 'A short line `x + y`', mode: PasteMode.markdown));
+    await tester.pumpAndSettle();
+
+    final text = tester
+        .widgetList<RichText>(
+            find.descendant(of: editor, matching: find.byType(RichText)))
+        .firstWhere(
+            (widget) => widget.text.toPlainText() == 'A short line x + y')
+        .text;
+    final styles = <String, TextStyle?>{};
+    text.visitChildren((span) {
+      if (span is TextSpan && span.text != null) {
+        styles[span.text!] = span.style;
+      }
+      return true;
+    });
+    expect(styles['A short line ']?.letterSpacing, lessThan(0));
+    expect(styles['A short line ']?.wordSpacing, lessThan(0));
+    expect(styles['x + y']?.letterSpacing, 0);
+    expect(styles['x + y']?.wordSpacing, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('text style menu preserves the selection and applies a heading',
       (tester) async {
     await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));

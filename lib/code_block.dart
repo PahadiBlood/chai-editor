@@ -109,6 +109,8 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
   static const TextStyle _codeStyle = TextStyle(
     fontFamily: monoFont,
     fontSize: 13.5,
+    letterSpacing: 0,
+    wordSpacing: 0,
     height: 1.55,
     color: AppColors.codeText,
   );

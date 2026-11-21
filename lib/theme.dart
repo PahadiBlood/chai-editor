@@ -155,11 +155,18 @@ EditorStyle buildEditorStyle({bool compact = false}) {
     cursorColor: AppColors.accent,
     selectionColor: AppColors.selection,
     textStyleConfiguration: TextStyleConfiguration(
-      text: const TextStyle(fontSize: 16.5, color: AppColors.text),
+      text: const TextStyle(
+        fontSize: 16.5,
+        letterSpacing: -0.2,
+        wordSpacing: -0.4,
+        color: AppColors.text,
+      ),
       bold: const TextStyle(fontWeight: FontWeight.w700),
       code: const TextStyle(
         fontFamily: monoFont,
         fontSize: 14,
+        letterSpacing: 0,
+        wordSpacing: 0,
         color: AppColors.inlineCode,
         backgroundColor: AppColors.inlineCodeBackground,
       ),
