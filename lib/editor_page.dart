@@ -32,7 +32,6 @@ import 'toolbar.dart';
 
 const kLegacyLoadDirtyReset =
     bool.fromEnvironment('CHAI_LEGACY_LOAD_DIRTY_RESET', defaultValue: false);
-const _markdownExtensions = ['md', 'markdown', 'txt'];
 
 class EditorPage extends StatefulWidget {
   const EditorPage(
@@ -54,6 +53,8 @@ class _EditorPageState extends State<EditorPage>
       vsync: this, duration: const Duration(milliseconds: 220), value: 1);
   Object? _lastLibrarySignature;
   final List<DocTab> _tabs = [];
+  final _openFolders = <String>[];
+  final _openingFiles = <String>{};
   int _current = 0;
   bool _editing = true;
   bool _external = false;
@@ -169,6 +170,7 @@ class _EditorPageState extends State<EditorPage>
       _library?.width,
       _library?.error,
       _library?.current?.revision,
+      _library?.current?.dirty,
     );
     if (_lastLibrarySignature != signature) {
       _lastLibrarySignature = signature;
@@ -541,18 +543,22 @@ class _EditorPageState extends State<EditorPage>
       final result = await FilePicker.platform.pickFiles(
         dialogTitle: 'Open document',
         type: FileType.custom,
-        allowedExtensions: _markdownExtensions,
+        allowedExtensions: markdownFileExtensions,
       );
       final path = result?.files.single.path;
-      if (path == null) return;
+      if (path != null && mounted) await _openPath(path);
+    } catch (error) {
+      _reportOpenError(error);
+    }
+  }
 
-      final existing = _tabs.indexWhere((t) => t.filePath == path);
-      if (existing >= 0) {
-        setState(() {
-          _current = existing;
-          _external = true;
-        });
-        _focusTab(_tabs[existing]);
+  Future<void> _openPath(String path) async {
+    if (!_openingFiles.add(path)) return;
+    try {
+      final existing = _tabs.where((tab) => tab.filePath == path).firstOrNull;
+      if (existing != null) {
+        _scaffoldKey.currentState?.closeDrawer();
+        _selectTab(existing);
         return;
       }
 
@@ -563,13 +569,37 @@ class _EditorPageState extends State<EditorPage>
         return;
       }
       final text = await File(path).readAsString();
+      if (!mounted) return;
       _external = true;
       _addTab(markdown: text, filePath: path);
+      _scaffoldKey.currentState?.closeDrawer();
       _focusTab(_tab);
-    } catch (e) {
-      debugPrint('Open file: $e');
-      _toast(
-          'Couldn’t open this file. It may have moved or no longer be accessible.');
+    } catch (error) {
+      _reportOpenError(error);
+    } finally {
+      _openingFiles.remove(path);
+    }
+  }
+
+  void _reportOpenError(Object error) {
+    debugPrint('Open file: $error');
+    _toast(
+        'Couldn’t open this file. It may have moved or no longer be accessible.');
+  }
+
+  Future<void> _openFolder() async {
+    try {
+      final path = await FilePicker.platform
+          .getDirectoryPath(dialogTitle: 'Open folder');
+      if (path == null || !mounted) return;
+      final folder = p.normalize(path);
+      setState(() {
+        if (!_openFolders.contains(folder)) _openFolders.insert(0, folder);
+        _library?.showingTrash = false;
+      });
+    } catch (error) {
+      debugPrint('Open folder: $error');
+      _toast('Couldn’t open this folder. Try selecting it again.');
     }
   }
 
@@ -879,7 +909,11 @@ class _EditorPageState extends State<EditorPage>
   Widget _sidebar() => ChangeNotifierProvider.value(
       value: _library!,
       child: LibrarySidebar(
-        onOpen: _openLibrary,
+        onOpen: _openPath,
+        onOpenFile: _open,
+        onOpenFolder: _openFolder,
+        openFolders: List.of(_openFolders),
+        onCloseFolder: (path) => setState(() => _openFolders.remove(path)),
         onRemove: _removeLibraryEntry,
         externalTabs: _tabs,
         onOpenExternal: _selectTab,

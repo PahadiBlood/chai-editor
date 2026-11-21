@@ -6,6 +6,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('text style menu preserves the selection and applies a heading',
+      (tester) async {
+    await tester.pumpWidget(const ChaiEditorApp(enableLibrary: false));
+    await tester.pumpAndSettle();
+    final editor = tester.widget<AppFlowyEditor>(find.byType(AppFlowyEditor));
+    final state = editor.editorState;
+    await state.apply(
+        state.transaction..insertText(state.document.first!, 0, 'Title'));
+    editor.focusNode!.requestFocus();
+    final selection = Selection(
+      start: Position(path: [0], offset: 0),
+      end: Position(path: [0], offset: 5),
+    );
+    state.selection = selection;
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Text style'));
+    await tester.pumpAndSettle();
+    expect(state.selection, selection);
+    await tester.tap(find.text('Heading 2'));
+    await tester.pumpAndSettle();
+
+    final heading = state.document.first!;
+    expect(heading.type, HeadingBlockKeys.type);
+    expect(heading.attributes[HeadingBlockKeys.level], 2);
+    expect(heading.delta!.toPlainText(), 'Title');
+    expect(state.selection, selection);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('paste menu parses Markdown and preserves the plain paste option',
       (tester) async {
     AppFlowyClipboard.mockSetData(

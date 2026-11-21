@@ -250,6 +250,7 @@ class EditorToolbar extends StatelessWidget {
   Widget _buildTextStyleMenu() {
     return PopupMenuButton<String>(
       tooltip: 'Text style',
+      requestFocus: false,
       enabled: editing,
       onSelected: (value) {
         switch (value) {

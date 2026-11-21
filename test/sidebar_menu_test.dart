@@ -29,8 +29,11 @@ void main() {
                     width: 300,
                     child: ChangeNotifierProvider.value(
                         value: model,
-                        child:
-                            LibrarySidebar(onOpen: (_) {}, onHide: () {})))))));
+                        child: LibrarySidebar(
+                            onOpen: (_) {},
+                            onOpenFile: () {},
+                            onOpenFolder: () {},
+                            onHide: () {})))))));
     await tester.pumpAndSettle();
     final open = model.openNote;
     await tester.tap(find.text('Welcome'), buttons: kSecondaryMouseButton);

@@ -10,25 +10,36 @@ import '../doc_tab.dart';
 import '../file_manager.dart';
 import '../library/library_model.dart';
 import '../library/library_service.dart';
+import 'open_folder_row.dart';
 
 const kLegacyHoverPreload =
     bool.fromEnvironment('CHAI_LEGACY_HOVER_PRELOAD', defaultValue: false);
 const _sidebarAccent = AppColors.white;
 
+enum _AddAction { newNote, newFolder, openFile, openFolder }
+
 class LibrarySidebar extends StatefulWidget {
   const LibrarySidebar(
       {super.key,
       required this.onOpen,
+      required this.onOpenFile,
+      required this.onOpenFolder,
       required this.onHide,
       this.onExport,
       this.onRemove,
       this.externalTabs = const [],
+      this.openFolders = const [],
+      this.onCloseFolder,
       this.onOpenExternal,
       this.onCloseExternal});
   final ValueChanged<String> onOpen;
+  final VoidCallback onOpenFile;
+  final VoidCallback onOpenFolder;
   final VoidCallback onHide;
   final Future<void> Function(String path)? onRemove;
   final List<DocTab> externalTabs;
+  final List<String> openFolders;
+  final ValueChanged<String>? onCloseFolder;
   final ValueChanged<DocTab>? onOpenExternal;
   final ValueChanged<DocTab>? onCloseExternal;
   final void Function(String path, String format)? onExport;
@@ -38,12 +49,24 @@ class LibrarySidebar extends StatefulWidget {
 
 class _LibrarySidebarState extends State<LibrarySidebar> {
   final _focus = FocusNode(debugLabel: 'library sidebar');
+  final _folderScroll = ScrollController();
   String? _contextTarget;
   bool _menuShowing = false;
   DateTime _lastClick = DateTime(2000);
+
+  @override
+  void didUpdateWidget(LibrarySidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.openFolders.length <= oldWidget.openFolders.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _folderScroll.hasClients) _folderScroll.jumpTo(0);
+    });
+  }
+
   @override
   void dispose() {
     _focus.dispose();
+    _folderScroll.dispose();
     super.dispose();
   }
 
@@ -325,26 +348,13 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600)),
                             )),
-                            _createMenu(model, model.destination),
+                            _addMenu(model, model.destination),
                             IconButton(
                                 tooltip: 'Hide sidebar',
                                 icon: const Icon(Icons.view_sidebar_outlined,
                                     size: 20),
                                 onPressed: widget.onHide),
                           ])),
-                  _drop(
-                      model,
-                      model.service.root,
-                      Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(18, 12, 12, 8),
-                            child: Text('On My Mac',
-                                style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12)),
-                          ))),
                   if (widget.externalTabs.isNotEmpty) ...[
                     const Align(
                         alignment: Alignment.centerLeft,
@@ -412,9 +422,40 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                               ])),
                             ])
                           : ListView(
+                              controller: _folderScroll,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 8),
                               children: [
+                                  if (widget.openFolders.isNotEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.fromLTRB(10, 8, 4, 4),
+                                      child: Text('Open folders',
+                                          style: TextStyle(
+                                              color: AppColors.textMuted,
+                                              fontSize: 12)),
+                                    ),
+                                  for (final path in widget.openFolders)
+                                    OpenFolderRow(
+                                      key: ValueKey(('open folder', path)),
+                                      path: path,
+                                      onOpenFile: widget.onOpen,
+                                      onClose: widget.onCloseFolder == null
+                                          ? null
+                                          : () => widget.onCloseFolder!(path),
+                                    ),
+                                  _drop(
+                                    model,
+                                    model.service.root,
+                                    const Padding(
+                                      padding:
+                                          EdgeInsets.fromLTRB(10, 12, 4, 8),
+                                      child: Text('On My Mac',
+                                          style: TextStyle(
+                                              color: AppColors.textMuted,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
+                                    ),
+                                  ),
                                   for (final entry in model.visible)
                                     _row(model, entry),
                                   const SizedBox(height: 80),
@@ -483,17 +524,40 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                 onPressed: () => widget.onCloseExternal?.call(tab))),
       );
 
-  Widget _createMenu(LibraryModel model, String parent) =>
-      PopupMenuButton<bool>(
-        tooltip: 'New note or folder',
+  Widget _addMenu(LibraryModel model, String parent) =>
+      PopupMenuButton<_AddAction>(
+        tooltip: 'Add or open',
         requestFocus: false,
         padding: EdgeInsets.zero,
         icon: const Icon(Icons.add, size: 18),
-        onSelected: (folder) =>
-            model.run(() => model.create(folder: folder, parent: parent)),
+        onSelected: (action) {
+          switch (action) {
+            case _AddAction.newNote:
+              model.run(() => model.create(parent: parent));
+            case _AddAction.newFolder:
+              model.run(() => model.create(folder: true, parent: parent));
+            case _AddAction.openFile:
+              widget.onOpenFile();
+            case _AddAction.openFolder:
+              widget.onOpenFolder();
+          }
+        },
         itemBuilder: (_) => const [
-          PopupMenuItem(value: false, height: 30, child: Text('New Note')),
-          PopupMenuItem(value: true, height: 30, child: Text('New Folder')),
+          PopupMenuItem(
+              value: _AddAction.newNote, height: 30, child: Text('New Note')),
+          PopupMenuItem(
+              value: _AddAction.newFolder,
+              height: 30,
+              child: Text('New Folder')),
+          PopupMenuDivider(),
+          PopupMenuItem(
+              value: _AddAction.openFile,
+              height: 30,
+              child: Text('Open File…')),
+          PopupMenuItem(
+              value: _AddAction.openFolder,
+              height: 30,
+              child: Text('Open Folder…')),
         ],
       );
 
@@ -595,7 +659,7 @@ class _LibrarySidebarState extends State<LibrarySidebar> {
                   SizedBox(
                       width: 28,
                       child: selected || hover
-                          ? _createMenu(model, entry.path)
+                          ? _addMenu(model, entry.path)
                           : Text('${entry.noteCount}',
                               textAlign: TextAlign.center,
                               style: const TextStyle(

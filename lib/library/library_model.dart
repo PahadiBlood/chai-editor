@@ -330,10 +330,12 @@ class LibraryModel extends ChangeNotifier {
         });
         await service.writeNote(path, text);
       }
-      if ((_revisionByTab[tab] ?? 0) == revision) tab.dirty = false;
+      final clearedDirty = tab.dirty && (_revisionByTab[tab] ?? 0) == revision;
+      if (clearedDirty) tab.dirty = false;
       if (!_disposed && identical(tab, current)) {
         status.value = tab.dirty ? 'Unsaved' : 'Saved';
       }
+      if (!_disposed && clearedDirty) notifyListeners();
     });
     _fileWrites[path] = write;
     try {

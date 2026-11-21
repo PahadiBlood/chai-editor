@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:chai_editor/file_manager.dart';
+import 'package:chai_editor/library/library_model.dart';
 import 'package:chai_editor/library/library_service.dart';
 import 'package:chai_editor/main.dart';
 import 'package:chai_editor/toolbar.dart';
@@ -14,8 +15,18 @@ import 'package:path/path.dart' as p;
 
 class _Picker extends FilePicker {
   final opened = <String?>[];
+  final directories = <String?>[];
   final saved = <String?>[];
   int saveCalls = 0;
+
+  @override
+  Future<String?> getDirectoryPath({
+    String? dialogTitle,
+    bool lockParentWindow = false,
+    String? initialDirectory,
+  }) async =>
+      directories.removeAt(0);
+
   @override
   Future<FilePickerResult?> pickFiles(
       {String? dialogTitle,
@@ -236,6 +247,83 @@ void main() {
     expect(await tester.runAsync(() => File(destination).readAsString()),
         contains('Updated Added'));
     expect(tab.libraryManaged, true);
+    await stop(tester);
+  });
+
+  testWidgets('library autosave clears the unsaved dot beside the file name',
+      (tester) async {
+    await start(tester, library: true);
+    final tab = toolbar(tester).activeTab!;
+    final dot = find.descendant(
+        of: find.byTooltip('Tabs and file'),
+        matching: find.byIcon(Icons.circle));
+    expect(dot, findsNothing);
+    await type(tester, 'Autosaved ');
+    expect(dot, findsOneWidget);
+
+    await tester.pump(kLibraryAutosaveDelay);
+    await finishIO(tester, () => !tab.needsSave);
+    expect(dot, findsNothing);
+    expect(await tester.runAsync(() => File(tab.filePath!).readAsString()),
+        contains('Autosaved Welcome'));
+    await stop(tester);
+  });
+
+  testWidgets('sidebar plus menus open files and browse existing folders',
+      (tester) async {
+    final looseFile = await file(tester, 'Loose.txt', 'Loose file');
+    final folder = p.join(root.path, 'Existing project');
+    final subfolder = p.join(folder, 'Drafts');
+    final nestedFile = p.join(subfolder, 'Article.md');
+    await tester.runAsync(() async {
+      await Directory(subfolder).create(recursive: true);
+      await File(nestedFile).writeAsString('Original');
+      await File(p.join(subfolder, 'Photo.png')).writeAsBytes([0]);
+    });
+    await start(tester, library: true);
+
+    final plus = find.byTooltip('Add or open');
+    picker.opened.add(looseFile);
+    await tester.tap(plus.first);
+    await tester.pumpAndSettle();
+    expect(find.text('New Note'), findsOneWidget);
+    expect(find.text('New Folder'), findsOneWidget);
+    await tester.tap(find.text('Open File…'));
+    await finishIO(
+        tester, () => toolbar(tester).activeTab?.filePath == looseFile);
+    expect(editor(tester).document.first!.delta!.toPlainText(), 'Loose file');
+
+    await tester.tap(find.text('Notes'));
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
+    expect(plus, findsNWidgets(2));
+    picker.directories.add(folder);
+    await tester.tap(plus.last);
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open Folder…'));
+    await finishIO(tester, () => find.text('Drafts').evaluate().isNotEmpty);
+    expect(find.text('Existing project'), findsOneWidget);
+    expect(find.text('Article.md'), findsNothing);
+
+    await tester.tap(find.text('Drafts'));
+    await finishIO(tester, () => find.text('Article.md').evaluate().isNotEmpty);
+    expect(find.text('Photo.png'), findsNothing);
+    await tester.tap(find.text('Article.md'));
+    await finishIO(
+        tester, () => toolbar(tester).activeTab?.filePath == nestedFile);
+
+    await type(tester, 'Edited ');
+    toolbar(tester).onSave();
+    await finishIO(tester, () => !toolbar(tester).activeTab!.needsSave);
+    expect(await tester.runAsync(() => File(nestedFile).readAsString()),
+        'Edited Original\n');
+    expect(picker.saveCalls, 0);
+
+    await tester.tap(find.byTooltip('Close folder'));
+    await tester.pumpAndSettle();
+    expect(find.text('Existing project'), findsNothing);
+    expect(toolbar(tester).activeTab?.filePath, nestedFile);
     await stop(tester);
   });
 

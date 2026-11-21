@@ -2,6 +2,8 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 
 import 'code_block.dart';
 
+const markdownFileExtensions = ['md', 'markdown', 'txt'];
+
 /// Markdown text -> editor document.
 Document markdownToEditorDocument(String markdown) {
   if (markdown.trim().isEmpty) {
